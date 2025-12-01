@@ -1,0 +1,222 @@
+{
+    "새길이엔시": {
+        "SAEGL03504": {
+            "__note__": "",
+            "__absolute_path__": "C:/data/SAEGL03504"
+        }
+    },
+    "SAEGIL": {
+        "SAEGL03504": {
+            "__note__": "",
+            "__absolute_path__": "C:/data/SAEGL03504",
+            "1227998430.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                }
+            },
+            "1227998453.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                }
+            },
+            "1232188024.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                }
+            },
+            "1232250486.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": 0,
+                    "label": "None"
+                }
+            }
+        }
+    }
+}
