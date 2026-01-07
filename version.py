@@ -6,7 +6,7 @@ Convert Pro 3 - Version Management
 # 버전 정보 (이 파일만 수정하면 됨)
 VERSION_MAJOR = 1
 VERSION_MINOR = 2
-VERSION_PATCH = 7
+VERSION_PATCH = 8
 
 # 자동 생성
 VERSION = f"v{VERSION_MAJOR}.{VERSION_MINOR}.{VERSION_PATCH}"
