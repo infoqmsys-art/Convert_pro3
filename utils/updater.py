@@ -129,7 +129,11 @@ class AutoUpdater:
             
             # 서버에서 버전 정보 가져오기
             with urllib.request.urlopen(version_url, timeout=timeout) as response:
-                data = json.loads(response.read().decode('utf-8'))
+                content = response.read()
+                # UTF-8 BOM 제거 후 디코딩
+                if content.startswith(b'\xef\xbb\xbf'):
+                    content = content[3:]
+                data = json.loads(content.decode('utf-8'))
             
             latest_version = data.get("version", "").replace("v", "").strip()
             

@@ -5,6 +5,7 @@ echo Convert Pro 3 빌드
 echo ========================================
 echo.
 
-powershell -ExecutionPolicy Bypass -File build.ps1
+cd /d "%~dp0"
+powershell -ExecutionPolicy Bypass -File "%~dp0build.ps1"
 
 pause

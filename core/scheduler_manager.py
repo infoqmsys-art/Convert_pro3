@@ -160,9 +160,25 @@ class SchedulerManager:
 
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        new_row = {col: 0 for col in df.columns}
+        new_row = {}
+        for col in df.columns:
+            dtype = df[col].dtype
+            if pd.api.types.is_float_dtype(dtype):
+                new_row[col] = 0.0
+            elif pd.api.types.is_integer_dtype(dtype):
+                new_row[col] = 0
+            else:
+                new_row[col] = ""
+        
+        # timestamp 컬럼 찾기 (없으면 첫 번째 컬럼 사용)
+        time_col = None
         if "timestamp" in df.columns:
-            new_row["timestamp"] = now_str
+            time_col = "timestamp"
+        elif len(df.columns) > 0:
+            time_col = df.columns[0]
+        
+        if time_col:
+            new_row[time_col] = now_str
 
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
 

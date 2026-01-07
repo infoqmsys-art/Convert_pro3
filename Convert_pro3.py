@@ -1,8 +1,8 @@
 import os
 import tkinter as tk
-from version import VERSION_SHORT, APP_NAME, APP_FULL_NAME
+from version import VERSION, APP_NAME, APP_FULL_NAME
 
-APP_VERSION = VERSION_SHORT  # 버전은 version.py에서 관리
+APP_VERSION = VERSION  # 버전은 version.py에서 관리
 
 ENABLE_MEMORY_TRACKING = True  # ⭐ 프로토타입용 (나중에 False)
 
@@ -92,7 +92,7 @@ class ConvertPro3App:
         # =========================
         self.updater = AutoUpdater(
             current_version=APP_VERSION,
-            update_server_url="https://yourserver.com/updates",  # TODO: 실제 서버 URL로 변경
+            update_server_url="https://infoqmsys-art.github.io/Convert_pro3_updates/updates",
             logger=self.logger
         )
         self.update_info = None  # 업데이트 정보 저장

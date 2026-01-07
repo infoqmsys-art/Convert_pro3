@@ -76,11 +76,23 @@ class SensorProcessor:
             
         sensor_cols = [cfg["col_idx"] for cfg in channels.values()]
 
-        df.iloc[:, sensor_cols] = (
-            df.iloc[:, sensor_cols]
-            .apply(pd.to_numeric, errors="coerce")
-            .astype(float)
-        )
+        # 각 센서 컬럼을 개별 레이블 기반으로 안전하게 numeric->float로 변환하여 할당
+        try:
+            converted = (
+                df.iloc[:, sensor_cols]
+                .apply(pd.to_numeric, errors="coerce")
+                .astype(float)
+            )
+            for i, col_idx in enumerate(sensor_cols):
+                col_name = df.columns[col_idx]
+                df[col_name] = converted.iloc[:, i]
+        except Exception:
+            # 실패 시 기존 방식으로 시도
+            df.iloc[:, sensor_cols] = (
+                df.iloc[:, sensor_cols]
+                .apply(pd.to_numeric, errors="coerce")
+                .astype(float)
+            )
 
         for ch, cfg in channels.items():
             mode = cfg["mode"]
@@ -96,7 +108,27 @@ class SensorProcessor:
                 # generate_XXX는 반드시 (df, cfg) -> Series 반환
                 out = method(df, cfg)
                 if out is not None:
-                    df.iloc[:, cfg["col_idx"]] = out
+                    # 안전한 할당: out을 Series로 변환하고 numeric으로 강제한 뒤 float로 캐스팅
+                    try:
+                        if not isinstance(out, pd.Series):
+                            out = pd.Series(out, index=df.index)
+                        out = pd.to_numeric(out, errors="coerce").astype(float)
+                    except Exception:
+                        # 변환 실패 시, 객체 형태로 그대로 할당하여 원래 동작 유지
+                        out = pd.Series(out, index=df.index)
+
+                    # 대상 컬럼을 float로 미리 캐스팅하여 dtype 불일치 경고 방지
+                    try:
+                        col_name = df.columns[cfg["col_idx"]]
+                        df[col_name] = df[col_name].astype(float)
+                    except Exception:
+                        pass
+
+                    # 레이블 기반으로 안전하게 할당
+                    try:
+                        df[df.columns[cfg["col_idx"]]] = out
+                    except Exception:
+                        df.iloc[:, cfg["col_idx"]] = out
             except Exception as e:
                 if self.logger:
                     self.logger.log(
@@ -543,7 +575,7 @@ class SensorProcessor:
         # -----------------------------
         # 파라미터
         # -----------------------------
-        P_SPIKE = 0.0005   # 0.05%
+        P_SPIKE = 0.01     # 1%
         STEP = 0.0001
 
         # -----------------------------

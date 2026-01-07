@@ -9,7 +9,10 @@ from datetime import datetime
 def update_version(major=None, minor=None, patch=None):
     """버전 업데이트"""
     # 현재 버전 읽기
-    version_path = '../version.py'
+    import os
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    version_path = os.path.join(project_root, 'version.py')
     with open(version_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
     
@@ -41,10 +44,10 @@ def update_version(major=None, minor=None, patch=None):
     print(f"✅ 버전 업데이트: v{current_major}.{current_minor}.{current_patch} → v{new_major}.{new_minor}.{new_patch}")
     
     # version.json 생성
-    version_short = f"v{new_major}.{new_minor}"
+    version = f"v{new_major}.{new_minor}.{new_patch}"
     version_json = {
-        "version": version_short,
-        "download_url": f"https://yourserver.com/updates/ConvertPro3_{version_short}.exe",
+        "version": version,
+        "download_url": f"https://github.com/infoqmsys-art/Convert_pro3_updates/releases/download/{version}/ConvertPro3.exe",
         "updater_url": "https://yourserver.com/updates/update.exe",
         "release_notes": "- 버그 수정\n- 기능 개선",
         "release_date": datetime.now().strftime("%Y-%m-%d"),
@@ -52,14 +55,18 @@ def update_version(major=None, minor=None, patch=None):
     }
     
     import json
-    with open('../version.json', 'w', encoding='utf-8') as f:
+    import os
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    version_json_path = os.path.join(project_root, 'version.json')
+    with open(version_json_path, 'w', encoding='utf-8') as f:
         json.dump(version_json, f, indent=2, ensure_ascii=False)
     
     print(f"✅ version.json 생성 완료")
     print(f"\n📝 다음 단계:")
     print(f"   1. version.json의 release_notes 수정")
-    print(f"   2. .\build.ps1 실행하여 빌드")
-    print(f"   3. dist\ConvertPro3_{version_short}.exe 서버에 업로드")
+    print(f"   2. .\\build.ps1 실행하여 빌드")
+    print(f"   3. dist\\ConvertPro3.exe 서버에 업로드")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -74,7 +81,10 @@ if __name__ == "__main__":
     
     # 현재 버전 읽기
     import sys
-    sys.path.insert(0, '..')
+    import os
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    sys.path.insert(0, project_root)
     import version
     major = version.VERSION_MAJOR
     minor = version.VERSION_MINOR

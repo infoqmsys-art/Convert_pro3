@@ -297,6 +297,7 @@ class MainUI:
         if enabled:
             self.status_label.config(text="대기 중", fg="#666666")
             self.statusbar_label.config(text="준비 완료", fg="#000000")
+            self.reset_progress()  # 상태바 초기화
         else:
             self.status_label.config(text="변환 중...", fg="#4A90E2")
             self.statusbar_label.config(text="변환 작업 진행 중...", fg="#4A90E2")

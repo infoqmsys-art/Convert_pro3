@@ -5,6 +5,7 @@ echo update.exe 빌드
 echo ========================================
 echo.
 
-powershell -ExecutionPolicy Bypass -File build_updater.ps1
+cd /d "%~dp0"
+powershell -ExecutionPolicy Bypass -File "%~dp0build_updater.ps1"
 
 pause

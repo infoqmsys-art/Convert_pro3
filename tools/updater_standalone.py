@@ -31,6 +31,7 @@ import subprocess
 import tkinter as tk
 from tkinter import ttk
 import threading
+import psutil
 
 
 class UpdaterGUI:
@@ -109,12 +110,28 @@ class StandaloneUpdater:
         if self.gui:
             self.gui.update_status(message)
     
+    def terminate_target_process(self):
+        """대상 프로세스 종료"""
+        target_name = os.path.basename(self.target_exe)
+        try:
+            for proc in psutil.process_iter(['pid', 'name', 'exe']):
+                try:
+                    if proc.info['exe'] and os.path.normpath(proc.info['exe']) == os.path.normpath(self.target_exe):
+                        self.log(f"프로세스 종료: {proc.info['pid']}")
+                        proc.terminate()
+                        proc.wait(timeout=5)  # 5초 대기
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+                    pass
+        except Exception as e:
+            self.log(f"프로세스 종료 중 오류: {e}")
+    
     def run(self):
         """업데이트 실행"""
         try:
-            # 1. 프로그램 종료 대기
-            self.log("프로그램 종료 대기 중... (3초)")
-            time.sleep(3)
+            # 1. 프로그램 강제 종료
+            self.log("프로그램 종료 중...")
+            self.terminate_target_process()
+            time.sleep(2)  # 종료 대기
             
             # 2. 파일 존재 확인
             if not os.path.exists(self.update_file):
@@ -215,11 +232,82 @@ def run_updater_with_gui(target_exe, update_file):
 
 def main():
     """메인 함수"""
+    # 인자가 없으면 자동 업데이트 모드
     if len(sys.argv) < 3:
-        print("사용법: update.exe <target_exe> <update_file>")
-        print("예: update.exe \"C:\\Program Files\\ConvertPro3.exe\" \"C:\\Temp\\update.exe\"")
-        sys.exit(1)
+        # 자동 업데이트: 현재 디렉토리에서 ConvertPro3 찾기
+        import urllib.request
+        import json
+        
+        gui = UpdaterGUI()
+        gui.update_status("Convert Pro 3 업데이트 확인 중...")
+        
+        try:
+            # 현재 실행 파일이 있는 디렉토리
+            if getattr(sys, 'frozen', False):
+                current_dir = os.path.dirname(sys.executable)
+            else:
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # ConvertPro3 실행 파일 찾기
+            target_exe = os.path.join(current_dir, "ConvertPro3.exe")
+            
+            if not os.path.exists(target_exe):
+                gui.update_status("ConvertPro3.exe를 찾을 수 없습니다.")
+                gui.update_status("메인 프로그램과 같은 폴더에서 실행하세요.")
+                time.sleep(3)
+                sys.exit(1)
+            gui.update_status(f"대상: {os.path.basename(target_exe)}")
+            
+            # 서버에서 버전 정보 가져오기
+            version_url = "https://infoqmsys-art.github.io/Convert_pro3_updates/updates/version.json"
+            gui.update_status("서버에서 최신 버전 확인 중...")
+            
+            with urllib.request.urlopen(version_url, timeout=10) as response:
+                content = response.read()
+                if content.startswith(b'\xef\xbb\xbf'):
+                    content = content[3:]
+                data = json.loads(content.decode('utf-8'))
+            
+            download_url = data.get("download_url")
+            version = data.get("version")
+            
+            if not download_url:
+                gui.update_status("업데이트 URL을 찾을 수 없습니다.")
+                time.sleep(3)
+                sys.exit(1)
+            
+            gui.update_status(f"최신 버전: v{version}")
+            gui.update_status(f"다운로드 중... (약 35MB)")
+            
+            # 업데이트 파일 다운로드
+            update_file = os.path.join(current_dir, f"ConvertPro3_v{version}_update.exe")
+            
+            def download_with_progress():
+                urllib.request.urlretrieve(download_url, update_file)
+                gui.update_status("다운로드 완료!")
+                
+                # 업데이트 실행
+                updater = StandaloneUpdater(target_exe, update_file, gui)
+                success = updater.run()
+                
+                if success:
+                    gui.root.after(2000, gui.root.destroy)
+                else:
+                    gui.update_status("업데이트 실패")
+                    time.sleep(3)
+            
+            thread = threading.Thread(target=download_with_progress, daemon=True)
+            thread.start()
+            gui.root.mainloop()
+            
+        except Exception as e:
+            gui.update_status(f"오류 발생: {e}")
+            time.sleep(3)
+            sys.exit(1)
+        
+        return
     
+    # 명령줄 인자가 있으면 기존 방식 사용
     target_exe = sys.argv[1]
     update_file = sys.argv[2]
     
