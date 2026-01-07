@@ -1,280 +1,279 @@
+# core/file_processor.py
+"""
+============================================================
+Convert Pro 3 – FileProcessor Core Principles (LOCKED)
+============================================================
+
+[원칙 1] 변환의 정의
+- 변환이란 "원본 데이터를 가공하여 Convert 파일을 생성/추가하는 행위"이다.
+- 시간 중복, 정렬, 누락 보정, 데이터 이상 여부는 변환의 본질이 아니다.
+- 원본에 존재하는 유효한 모든 행은 기본적으로 변환 대상이다.
+
+[원칙 2] 증분 변환 방식
+- 최초 변환 시: 원본의 모든 유효 행을 변환하여 파일을 생성한다.
+- 이후 변환 시: 변환본의 마지막 timestamp 이후 행만 변환하여
+  기존 변환본 뒤에 그대로 append 한다.
+- 기존 변환본의 중간 행이 삭제되었더라도,
+  마지막 timestamp 기준만을 신뢰한다.
+
+[원칙 3] 헤더 및 컬럼 정책
+- 원본 CSV의 헤더 유무는 신경 쓰지 않는다 (header=None).
+- timestamp는 항상 0열이며, 파싱 불가/연도 < 2000 데이터는 무시한다.
+- 변환본 컬럼 구조는 항상 24개 컬럼으로 고정한다.
+- 최초 생성 시에만 STANDARD_HEADER를 기록하고,
+  이후 append 시에는 헤더를 절대 다시 쓰지 않는다.
+
+[원칙 4] Battery 처리 규칙
+- 원본의 batLevel(56열)을 읽어 Length 위치(3열)에 battery 값으로 덮어쓴다.
+- Length 컬럼은 변환본에서 더 이상 의미를 가지지 않는다.
+- 24열 이후의 모든 원본 컬럼은 변환 과정에서 제거한다.
+- Battery는 UI 및 변환본 확인을 위한 핵심 값이다.
+
+[원칙 5] 안정성 우선
+- 변환 파이프라인은 “멈추지 않는 것”이 최우선이다.
+- 일부 행에 문자열/JSON/이상값이 있어도 전체 변환은 계속되어야 한다.
+- 예외 처리는 ‘스킵’이지 ‘중단’이 아니다.
+- 고급 기능(fill_interval, 중복제거, 정렬 등)은 이후 단계에서 추가한다.
+
+※ 이 원칙은 리팩터링·기능 추가 시에도 절대 변경하지 않는다.
+============================================================
+"""
+
 import os
 import pandas as pd
 from datetime import datetime
-from typing import Optional
+from io import StringIO
 
+STANDARD_HEADER = [
+    "timestamp",
+    "deviceId",
+    "STX",
+    "battery",
+    "ProtocolVersion",
+    "lineNumber",
+    "intervalTimeSet",
+    "amplifierX",
+    "amplifierY",
+    "amplifierZ",
+    "frequencyX",
+    "frequencyY",
+    "frequencyZ",
+    "degreeXAmount",
+    "degreeYAmount",
+    "degreeZAmount",
+    "AmountCH0",
+    "AmountCH1",
+    "AmountCH2",
+    "AmountCH3",
+    "AmountCH4",
+    "AmountCH5",
+    "AmountCH6",
+    "AmountCH7",
+]
 
 class FileProcessor:
     """
-    단일 CSV 파일 변환을 담당하는 엔진.
-
-    - 원본 CSV 읽기
-    - timestamp 파싱
-    - 기존 변환본(csv) 있으면 이어붙일 준비
-    - 채널 설정(CH0~CH7)에 따라 sensor_processor 적용
-    - 변환 결과를 Convertfile 폴더에 저장
-
-    ⚠️ 1차 버전:
-      - fill_interval(누락보충), gen_interval(주기 생성)은 아직 미구현 (TODO)
-      - 원본 CSV에 'timestamp', 'CH0'~'CH7' 열이 있다고 가정
-        → 나중에 Q~X, C~J 등 포맷 자동 인식 로직을 별도 단계에서 추가
+    Convert Pro 3 - 증분 변환 파이프라인
+    - 최초 변환: 원본 전체 변환
+    - 이후 변환: 마지막 timestamp 이후 행만 append
     """
-
-    def __init__(self, config, tree, sensor, logger, convert_root: Optional[str] = None):
-        """
-        config : ConfigManager 인스턴스
-        tree   : TreeManager 인스턴스
-        sensor : SensorProcessor 인스턴스
-        logger : Logger 인스턴스
-        convert_root : 변환 파일 저장 기본 폴더 (없으면 ./Convertfile 사용)
-        """
+    
+    def __init__(self, config, tree, sensor, fill_interval, logger, convert_root=None):
         self.config = config
         self.tree = tree
         self.sensor = sensor
+        self.fill_interval = fill_interval
         self.logger = logger
-        self.convert_root = convert_root or os.path.join(os.getcwd(), "Convertfile")
+        self.convert_root = convert_root or r"C:\data\Convertfile"
 
-    # ======================================================
-    #  public API
-    # ======================================================
-    def convert_file(self, company: str, folder: str, filename: str) -> None:
-        """
-        회사/폴더/파일 지정해서 변환 수행.
-        """
-        self.logger.log(f"[FileProcessor] 변환 시작: {company}/{folder}/{filename}")
+    def convert_all(self):
+        """전체 파일 변환 (UI/Scheduler 호출)"""
+        self.logger.log("전체 파일 변환 시작", level="DEBUG")
 
-        # 1) 설정 & 경로 확인
-        file_cfg = self._get_file_config(company, folder, filename)
-        if file_cfg is None:
-            return
-
-        source_path, dest_path = self._resolve_paths(company, folder, filename, file_cfg)
-        if source_path is None or dest_path is None:
-            return
-
-        # 2) 원본 & 기존 변환본 읽기
-        df_src = self._read_source_csv(source_path)
-        if df_src is None or df_src.empty:
-            self.logger.log(f"[FileProcessor] 원본 CSV가 비어있음 → 변환 중단", level="WARN")
-            return
-
-        df_src = self._ensure_parsed_time(df_src)
-
-        df_exist = self._read_existing_csv(dest_path)
-        if df_exist is not None and not df_exist.empty:
-            df_exist = self._ensure_parsed_time(df_exist)
-            last_time = df_exist["_parsed_time"].max()
-            # 기존 변환 마지막 시간 이후 데이터만 신규로 사용
-            df_new = df_src[df_src["_parsed_time"] > last_time].copy()
-        else:
-            df_exist = None
-            df_new = df_src.copy()
-
-        if df_new.empty:
-            self.logger.log("[FileProcessor] 신규 데이터 없음 → 변환할 행이 없습니다.")
-            return
-
-        # 3) (TODO) fill_interval / gen_interval 처리 자리
-        fill_interval = file_cfg.get("__fill_interval__", 0) or 0
-        gen_interval = file_cfg.get("__gen_interval__", 0) or 0
-
-        if fill_interval:
-            self.logger.log(f"[FileProcessor] fill_interval={fill_interval} (아직 미구현, pass)")
-            # TODO: fill_data(df_new, df_exist, fill_interval)
-
-        if gen_interval:
-            self.logger.log(f"[FileProcessor] gen_interval={gen_interval} (아직 미구현, pass)")
-            # TODO: create_data(...)
-
-        # 4) 채널(CH0~CH7) 변환 적용
-        df_new = self._apply_channels(company, folder, filename, file_cfg, df_src, df_new)
-
-        # 5) 기존 변환본과 합치기
-        if df_exist is not None and not df_exist.empty:
-            df_result = pd.concat([df_exist, df_new], ignore_index=True)
-            # 중복 timestamp 제거 (마지막 값 우선)
-            df_result = self._drop_duplicate_parsed_time(df_result)
-        else:
-            df_result = df_new
-
-        # 6) 저장
-        self._save_converted(df_result, dest_path)
-        self.logger.log(f"[FileProcessor] 변환 완료 → {dest_path}")
-
-    # ======================================================
-    #  config / path helpers
-    # ======================================================
-    def _get_file_config(self, company: str, folder: str, filename: str) -> Optional[dict]:
-        data = self.config.data
-        try:
-            file_cfg = data[company][folder][filename]
-            if not isinstance(file_cfg, dict):
-                raise KeyError("파일 설정이 dict 형식이 아닙니다.")
-            return file_cfg
-        except KeyError:
-            self.logger.log(
-                f"[FileProcessor] 설정 없음: {company}/{folder}/{filename}",
-                level="ERROR",
-            )
-            return None
-
-    def _resolve_paths(self, company: str, folder: str, filename: str, file_cfg: dict):
-        folder_cfg = self.config.data.get(company, {}).get(folder, {})
-        abs_path = folder_cfg.get("__absolute_path__")
-
-        if not abs_path:
-            self.logger.log(
-                f"[FileProcessor] __absolute_path__ 누락 → 원본 경로 알 수 없음: {company}/{folder}",
-                level="ERROR",
-            )
-            return None, None
-
-        source_path = os.path.join(abs_path, filename)
-        if not os.path.exists(source_path):
-            self.logger.log(
-                f"[FileProcessor] 원본 CSV 없음: {source_path}",
-                level="ERROR",
-            )
-            return None, None
-
-        dest_dir = os.path.join(self.convert_root, company, folder)
-        os.makedirs(dest_dir, exist_ok=True)
-        dest_path = os.path.join(dest_dir, filename)
-
-        return source_path, dest_path
-
-    # ======================================================
-    #  CSV I/O
-    # ======================================================
-    def _read_source_csv(self, path: str) -> Optional[pd.DataFrame]:
-        try:
-            df = pd.read_csv(path, encoding="utf-8-sig")
-            self.logger.log(f"[FileProcessor] 원본 CSV 읽기 성공: {path}")
-            return df
-        except Exception as e:
-            self.logger.log(f"[FileProcessor] 원본 CSV 읽기 실패: {e}", level="ERROR")
-            return None
-
-    def _read_existing_csv(self, path: str) -> Optional[pd.DataFrame]:
-        if not os.path.exists(path):
-            return None
-        try:
-            df = pd.read_csv(path, encoding="utf-8-sig")
-            self.logger.log(f"[FileProcessor] 기존 변환 CSV 읽기 성공: {path}")
-            return df
-        except Exception as e:
-            self.logger.log(f"[FileProcessor] 기존 변환 CSV 읽기 실패: {e}", level="ERROR")
-            return None
-
-    # ======================================================
-    #  timestamp / index helpers
-    # ======================================================
-    def _ensure_parsed_time(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        df에 '_parsed_time' 컬럼이 없으면,
-        첫 번째 컬럼을 timestamp로 가정하고 파싱해서 만든다.
-        """
-        if "_parsed_time" in df.columns:
-            return df
-
-        # 첫 번째 컬럼 이름
-        time_col = df.columns[0]
-        try:
-            parsed = pd.to_datetime(df[time_col], errors="coerce")
-            df = df.copy()
-            df["_parsed_time"] = parsed
-            df = df[~df["_parsed_time"].isna()].reset_index(drop=True)
-            self.logger.log(f"[FileProcessor] _parsed_time 생성 완료 (col='{time_col}')")
-        except Exception as e:
-            self.logger.log(
-                f"[FileProcessor] timestamp 파싱 실패 (col='{time_col}'): {e}",
-                level="ERROR",
-            )
-        return df
-
-    def _drop_duplicate_parsed_time(self, df: pd.DataFrame) -> pd.DataFrame:
-        if "_parsed_time" not in df.columns:
-            return df
-        df = df.sort_values("_parsed_time")
-        df = df.drop_duplicates(subset="_parsed_time", keep="last")
-        return df.reset_index(drop=True)
-
-    # ======================================================
-    #  채널 변환
-    # ======================================================
-    def _apply_channels(
-        self,
-        company: str,
-        folder: str,
-        filename: str,
-        file_cfg: dict,
-        df_src: pd.DataFrame,
-        df_new: pd.DataFrame,
-    ) -> pd.DataFrame:
-        """
-        CH0~CH7 설정을 읽어서 sensor_processor.apply_sensor_mode 적용.
-        ⚠️ 1차 버전: 원본 CSV에 'CH0'~'CH7' 열이 이미 존재한다고 가정.
-        """
-        df_new = df_new.copy()
-
-        for ch in range(8):
-            ch_key = f"CH{ch}"
-            ch_cfg = file_cfg.get(ch_key, {})
-
-            mode = (ch_cfg.get("offset") or "PASS").upper()  # 기존 config.json의 'offset' 키 사용
-            base = ch_cfg.get("base", "")
-            scale = ch_cfg.get("scale", 0)
-
-            # base, scale 숫자 변환
-            try:
-                base_val = float(base) if base not in ("", None) else 0.0
-            except Exception:
-                base_val = 0.0
-
-            try:
-                scale_val = float(scale) if scale not in ("", None) else 0.0
-            except Exception:
-                scale_val = 0.0
-
-            src_col = ch_key  # ⚠️ 현재는 'CH0'~'CH7' 열이 있다고 가정
-
-            if src_col not in df_new.columns:
-                # 원본에 열이 없으면 PASS
-                self.logger.log(
-                    f"[FileProcessor] 열 없음 → CH{ch}({src_col}) PASS 처리",
-                    level="WARN",
-                )
+        for company, folders in self.config.data.items():
+            if company.startswith("__"):
                 continue
 
-            self.logger.log(
-                f"[FileProcessor] CH{ch} 변환 시작: mode={mode}, base={base_val}, scale={scale_val}"
+            for folder, folder_cfg in folders.items():
+                if folder.startswith("__"):
+                    continue
+
+                for filename in folder_cfg:
+                    if filename.lower().endswith(".csv"):
+                        self.convert_file(company, folder, filename)
+
+        self.logger.log("전체 파일 변환 종료", level="DEBUG")
+
+    def convert_file(self, company, folder, filename):
+        """파일 단위 변환"""
+        self.logger.log(f"파일 변환 시작: {company}/{folder}/{filename}", level="DEBUG")
+
+        folder_cfg = self.config.data[company][folder]
+        src_path = os.path.join(folder_cfg["__absolute_path__"], filename)
+
+        if not os.path.exists(src_path):
+            self.logger.log(f"원본 없음 → 스킵: {company}/{folder}/{filename}", level="DEBUG")
+            return
+
+        out_path = os.path.join(self.convert_root, company, folder, filename)
+
+        # 1단계: 마지막 변환 시점 확인
+        base_time = self._get_last_converted_time(out_path)
+
+        # 2단계: 변환 대상 행 수집 (base_time 이후 데이터)
+        lines = self._collect_target_lines(src_path, base_time)
+
+        self.logger.log(f"기준 변환 시간: {base_time}", level="DEBUG")
+        self.logger.log(f"변환 대상 행 수: {len(lines)}", level="DEBUG")
+
+        # 3단계: DataFrame 생성
+        if lines:
+            df = pd.read_csv(
+                StringIO("\n".join(lines)),
+                header=None,
+                engine="python",
+                on_bad_lines="skip"
             )
 
-            try:
-                new_series = self.sensor.apply_sensor_mode(
-                    mode=mode,
-                    base=base_val,
-                    scale=scale_val,
-                    df_old=df_src,
-                    df_new=df_new,
-                    col=src_col,
-                )
-                # 결과 열 이름은 CH0~CH7 그대로 사용
-                df_new[src_col] = new_series
-            except Exception as e:
-                self.logger.log(
-                    f"[FileProcessor] CH{ch} 변환 실패: {e}",
-                    level="ERROR",
-                )
+            if df.empty:
+                self.logger.log("DataFrame 비어있음 → 스킵", level="DEBUG")
+                return
+        else:
+            self.logger.log(f"변환 대상 없음 → 스킵: {company}/{folder}/{filename}", level="DEBUG")
+            return
 
-        return df_new
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # 📌 변환 파이프라인 (Core Transform)
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        
+        # 4단계: 배터리 이동 (56열 → 3열)
+        df = self._move_battery(df)
 
-    # ======================================================
-    #  저장
-    # ======================================================
-    def _save_converted(self, df: pd.DataFrame, path: str) -> None:
+        # 5단계: 센서 처리 (보정값 적용)
+        file_cfg = self.config.data.get(company, {}).get(folder, {}).get(filename, {})
+        df = self.sensor.process(df, file_cfg)
+        
+        # 6단계: 소수점 처리
+        df = self.apply_decimal(df, file_cfg)
+
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # 🔧 선택적 기능 (Optional Features)
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        
+        # Fill Interval: 시간 간격 기반 누락 보충
+        interval = file_cfg.get("__fill_interval__", 0)
+        if interval > 0:
+            df = self.fill_interval.process(df, interval)
+
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # 💾 저장
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        
+        self._save_append(df, out_path)
+        self.logger.log(f"파일 변환 완료: {company}/{folder}/{filename}", level="DEBUG")
+
+    def _get_last_converted_time(self, out_path):
+        """변환본 마지막 행의 timestamp 추출"""
+        if not os.path.exists(out_path):
+            return None
+
         try:
-            df.to_csv(path, index=False, encoding="utf-8-sig")
-            self.logger.log(f"[FileProcessor] CSV 저장 완료: {path}")
+            with open(out_path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                buf = b""
+                pos = f.tell()
+
+                while pos > 0:
+                    pos -= 1
+                    f.seek(pos)
+                    b = f.read(1)
+
+                    if b == b"\n":
+                        if buf:
+                            line = buf[::-1].decode("utf-8", errors="ignore")
+                            ts = pd.to_datetime(line.split(",")[0], errors="coerce")
+                            if pd.notna(ts):
+                                return ts
+                            buf = b""
+                    else:
+                        buf += b
         except Exception as e:
-            self.logger.log(f"[FileProcessor] CSV 저장 실패: {e}", level="ERROR")
+            self.logger.log(f"[FP] 기준 시간 읽기 실패 → {e}", level="WARN")
+
+        return None
+
+    def _collect_target_lines(self, src_path, base_time):
+        """원본 파일에서 base_time 이후 행만 수집"""
+        lines = []
+
+        with open(src_path, "rb") as f:
+            for raw in f:
+                line = raw.decode("utf-8", errors="ignore").strip()
+                if not line:
+                    continue
+
+                parts = line.split(",")
+                if not parts:
+                    continue
+
+                ts = pd.to_datetime(parts[0], errors="coerce")
+
+                if pd.isna(ts) or ts.year < 2000:
+                    continue
+
+                if base_time is None:
+                    lines.append(line)
+                else:
+                    if ts > base_time:
+                        lines.append(line)
+
+        return lines
+
+    def _move_battery(self, df):
+        """배터리 이동: 56열(batLevel) → 3열(battery)"""
+        df = df.copy()
+
+        try:
+            battery = pd.to_numeric(df.iloc[:, 56], errors="coerce").fillna(0).to_numpy(dtype="float64")
+        except Exception:
+            battery = 0.0
+
+        df.iloc[:, 3] = battery
+        df = df.iloc[:, :24].copy()
+
+        return df
+
+    def _save_append(self, df, out_path):
+        """변환본 저장 (최초: 생성, 이후: append)"""
+        out_dir = os.path.dirname(out_path)
+        os.makedirs(out_dir, exist_ok=True)
+
+        df.columns = STANDARD_HEADER
+
+        if not os.path.exists(out_path):
+            df.to_csv(out_path, index=False, header=True, encoding="utf-8-sig")
+            return
+
+        with open(out_path, "a", encoding="utf-8-sig", newline="") as f:
+            df.to_csv(f, index=False, header=False)
+
+    def apply_decimal(self, df, file_cfg):
+        """채널별 소수점 설정 적용"""
+        df = df.copy()
+
+        for ch in range(8):
+            col = 16 + ch
+            ch_cfg = file_cfg.get(f"CH{ch}", {})
+            dec = ch_cfg.get("decimal", "")
+
+            if dec in ("", None):
+                continue
+
+            try:
+                d = int(dec)
+            except:
+                continue
+
+            df.iloc[:, col] = pd.to_numeric(df.iloc[:, col], errors="coerce").round(d)
+
+        return df

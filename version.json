@@ -1,0 +1,7 @@
+{
+  "version": "v1.3",
+  "download_url": "https://yourserver.com/updates/ConvertPro3_v1.3.exe",
+  "release_notes": "- 주기 생성 시 timestamp 버그 수정\n- 자동 업데이트 기능 추가\n- 성능 개선",
+  "release_date": "2026-01-07",
+  "mandatory": false
+}

@@ -1,220 +1,1712 @@
 {
-    "새길이엔시": {
-        "SAEGL03504": {
-            "__note__": "",
-            "__absolute_path__": "C:/data/SAEGL03504"
-        }
-    },
+    "__version__": 1,
     "SAEGIL": {
         "SAEGL03504": {
             "__note__": "",
             "__absolute_path__": "C:/data/SAEGL03504",
-            "1227998430.csv": {
-                "__fill_interval__": 0,
-                "__gen_interval__": 0,
-                "CH0": {
-                    "offset": "PASS",
-                    "base": "",
-                    "scale": 0,
-                    "label": "None"
-                },
-                "CH1": {
-                    "offset": "PASS",
-                    "base": "",
-                    "scale": 0,
-                    "label": "None"
-                },
-                "CH2": {
-                    "offset": "PASS",
-                    "base": "",
-                    "scale": 0,
-                    "label": "None"
-                },
-                "CH3": {
-                    "offset": "PASS",
-                    "base": "",
-                    "scale": 0,
-                    "label": "None"
-                },
-                "CH4": {
-                    "offset": "PASS",
-                    "base": "",
-                    "scale": 0,
-                    "label": "None"
-                },
-                "CH5": {
-                    "offset": "PASS",
-                    "base": "",
-                    "scale": 0,
-                    "label": "None"
-                },
-                "CH6": {
-                    "offset": "PASS",
-                    "base": "",
-                    "scale": 0,
-                    "label": "None"
-                },
-                "CH7": {
-                    "offset": "PASS",
-                    "base": "",
-                    "scale": 0,
-                    "label": "None"
-                }
-            },
             "1227998453.csv": {
-                "__fill_interval__": 0,
+                "__fill_interval__": 10,
                 "__gen_interval__": 0,
                 "CH0": {
-                    "offset": "PASS",
-                    "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "mode": "Chang_SM",
+                    "base": "58.2",
+                    "scale": "18",
+                    "decimal": "2",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH1": {
-                    "offset": "PASS",
+                    "mode": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH2": {
-                    "offset": "PASS",
+                    "mode": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH3": {
-                    "offset": "PASS",
+                    "mode": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH4": {
-                    "offset": "PASS",
+                    "mode": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH5": {
-                    "offset": "PASS",
+                    "mode": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH6": {
-                    "offset": "PASS",
+                    "mode": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH7": {
-                    "offset": "PASS",
+                    "mode": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "__fill_missing__": false
+            }
+        },
+        "SAEGL10596": {
+            "__note__": "",
+            "__absolute_path__": "C:/data/SAEGL10596/SAEGL10596",
+            "1222069113.csv": {
+                "__fill_interval__": 10,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "mode": "CHANG_SM",
+                    "base": "55.2",
+                    "scale": "6.1",
+                    "decimal": "3",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 }
             },
-            "1232188024.csv": {
+            "1222202536.csv": {
                 "__fill_interval__": 0,
                 "__gen_interval__": 0,
                 "CH0": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH1": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH2": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH3": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH4": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH5": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH6": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH7": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 }
             },
-            "1232250486.csv": {
+            "1222273920.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "mode": "CHANG_SM",
+                    "base": "55.2",
+                    "scale": "6.2",
+                    "decimal": "3",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "mode": "CHANG_SM",
+                    "base": "55.2",
+                    "scale": "6.2",
+                    "decimal": "3",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "mode": "CHANG_SM",
+                    "base": "55.2",
+                    "scale": "6.2",
+                    "decimal": "3",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1222478195.csv": {
                 "__fill_interval__": 0,
                 "__gen_interval__": 0,
                 "CH0": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH1": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH2": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH3": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH4": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH5": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH6": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 },
                 "CH7": {
                     "offset": "PASS",
                     "base": "",
-                    "scale": 0,
-                    "label": "None"
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1222478402.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1222478508.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1222478664.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1222478687.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1222478717.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1222504313.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1222527837.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1222534310.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "mode": "CHANG_SM",
+                    "base": "45",
+                    "scale": "6.5",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "mode": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1227192818.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1227192827.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1227192843.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1231337019.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1232695934.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1232843477.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1232843507.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1232843523.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1232941474.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1232943031.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1237366111.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                }
+            },
+            "1238977779.csv": {
+                "__fill_interval__": 0,
+                "__gen_interval__": 0,
+                "CH0": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH1": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH2": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH3": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH4": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH5": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH6": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
+                },
+                "CH7": {
+                    "offset": "PASS",
+                    "base": "",
+                    "scale": "",
+                    "decimal": "",
+                    "label": "",
+                    "initial": ""
                 }
             }
         }

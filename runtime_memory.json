@@ -1,0 +1,1295 @@
+{
+  "start_time": "2025-12-23 10:41:59",
+  "records": [
+    {
+      "ts": "2025-12-23 10:41:59",
+      "stage": "app_start",
+      "memory_mb": 67.61
+    },
+    {
+      "ts": "2025-12-29 10:30:28",
+      "stage": "app_start",
+      "memory_mb": 67.81
+    },
+    {
+      "ts": "2025-12-29 11:57:13",
+      "stage": "app_start",
+      "memory_mb": 67.74
+    },
+    {
+      "ts": "2025-12-29 11:57:44",
+      "stage": "convert_all_start",
+      "memory_mb": 119.33
+    },
+    {
+      "ts": "2025-12-29 11:58:00",
+      "stage": "convert_all_end",
+      "memory_mb": 177.1
+    },
+    {
+      "ts": "2025-12-29 12:19:25",
+      "stage": "app_start",
+      "memory_mb": 68.44
+    },
+    {
+      "ts": "2025-12-29 12:19:33",
+      "stage": "convert_all_start",
+      "memory_mb": 79.27
+    },
+    {
+      "ts": "2025-12-29 12:19:46",
+      "stage": "convert_all_end",
+      "memory_mb": 79.84
+    },
+    {
+      "ts": "2025-12-29 12:20:14",
+      "stage": "convert_all_start",
+      "memory_mb": 79.98
+    },
+    {
+      "ts": "2025-12-29 12:20:27",
+      "stage": "convert_all_end",
+      "memory_mb": 103.98
+    },
+    {
+      "ts": "2025-12-29 12:22:14",
+      "stage": "convert_all_start",
+      "memory_mb": 103.95
+    },
+    {
+      "ts": "2025-12-29 12:22:29",
+      "stage": "convert_all_end",
+      "memory_mb": 105.05
+    },
+    {
+      "ts": "2025-12-29 12:25:51",
+      "stage": "app_start",
+      "memory_mb": 68.38
+    },
+    {
+      "ts": "2025-12-29 12:25:58",
+      "stage": "convert_all_start",
+      "memory_mb": 79.3
+    },
+    {
+      "ts": "2025-12-29 12:26:11",
+      "stage": "convert_all_end",
+      "memory_mb": 103.54
+    },
+    {
+      "ts": "2025-12-29 14:10:53",
+      "stage": "app_start",
+      "memory_mb": 68.45
+    },
+    {
+      "ts": "2025-12-29 14:11:32",
+      "stage": "convert_all_start",
+      "memory_mb": 80.58
+    },
+    {
+      "ts": "2025-12-29 14:11:46",
+      "stage": "convert_all_end",
+      "memory_mb": 81.1
+    },
+    {
+      "ts": "2025-12-29 14:13:12",
+      "stage": "convert_all_start",
+      "memory_mb": 81.28
+    },
+    {
+      "ts": "2025-12-29 14:15:29",
+      "stage": "app_start",
+      "memory_mb": 67.99
+    },
+    {
+      "ts": "2025-12-29 14:16:03",
+      "stage": "convert_all_start",
+      "memory_mb": 79.78
+    },
+    {
+      "ts": "2025-12-29 14:16:14",
+      "stage": "convert_all_start",
+      "memory_mb": 88.34
+    },
+    {
+      "ts": "2025-12-29 14:16:21",
+      "stage": "convert_all_end",
+      "memory_mb": 88.37
+    },
+    {
+      "ts": "2025-12-29 14:16:31",
+      "stage": "convert_all_end",
+      "memory_mb": 88.27
+    },
+    {
+      "ts": "2025-12-29 16:15:18",
+      "stage": "app_start",
+      "memory_mb": 68.34
+    },
+    {
+      "ts": "2025-12-29 16:15:25",
+      "stage": "convert_all_start",
+      "memory_mb": 80.46
+    },
+    {
+      "ts": "2025-12-29 16:15:57",
+      "stage": "convert_all_start",
+      "memory_mb": 81.68
+    },
+    {
+      "ts": "2025-12-29 16:15:59",
+      "stage": "convert_all_end",
+      "memory_mb": 114.94
+    },
+    {
+      "ts": "2025-12-29 16:17:03",
+      "stage": "convert_all_start",
+      "memory_mb": 154.34
+    },
+    {
+      "ts": "2025-12-29 16:17:07",
+      "stage": "convert_all_end",
+      "memory_mb": 149.34
+    },
+    {
+      "ts": "2025-12-29 18:45:52",
+      "stage": "app_start",
+      "memory_mb": 67.53
+    },
+    {
+      "ts": "2025-12-29 18:48:18",
+      "stage": "app_start",
+      "memory_mb": 67.8
+    },
+    {
+      "ts": "2025-12-29 18:49:28",
+      "stage": "app_start",
+      "memory_mb": 67.58
+    },
+    {
+      "ts": "2025-12-29 18:49:30",
+      "stage": "convert_all_start",
+      "memory_mb": 78.89
+    },
+    {
+      "ts": "2025-12-30 17:52:20",
+      "stage": "app_start",
+      "memory_mb": 68.04
+    },
+    {
+      "ts": "2025-12-30 17:52:21",
+      "stage": "convert_all_start",
+      "memory_mb": 79.18
+    },
+    {
+      "ts": "2025-12-30 18:00:23",
+      "stage": "app_start",
+      "memory_mb": 67.58
+    },
+    {
+      "ts": "2025-12-30 18:00:23",
+      "stage": "convert_all_start",
+      "memory_mb": 73.6
+    },
+    {
+      "ts": "2025-12-30 18:00:26",
+      "stage": "convert_all_end",
+      "memory_mb": 79.15
+    },
+    {
+      "ts": "2025-12-30 18:00:27",
+      "stage": "convert_all_start",
+      "memory_mb": 79.27
+    },
+    {
+      "ts": "2025-12-30 18:00:30",
+      "stage": "convert_all_end",
+      "memory_mb": 79.34
+    },
+    {
+      "ts": "2025-12-31 09:08:32",
+      "stage": "app_start",
+      "memory_mb": 67.56
+    },
+    {
+      "ts": "2025-12-31 09:08:34",
+      "stage": "convert_all_start",
+      "memory_mb": 78.57
+    },
+    {
+      "ts": "2025-12-31 09:08:37",
+      "stage": "convert_all_end",
+      "memory_mb": 79.16
+    },
+    {
+      "ts": "2025-12-31 09:20:37",
+      "stage": "app_start",
+      "memory_mb": 68.13
+    },
+    {
+      "ts": "2025-12-31 09:20:42",
+      "stage": "app_start",
+      "memory_mb": 67.47
+    },
+    {
+      "ts": "2025-12-31 09:30:00",
+      "stage": "convert_all_start",
+      "memory_mb": 80.33
+    },
+    {
+      "ts": "2025-12-31 09:30:04",
+      "stage": "convert_all_end",
+      "memory_mb": 80.78
+    },
+    {
+      "ts": "2025-12-31 09:45:00",
+      "stage": "convert_all_start",
+      "memory_mb": 80.77
+    },
+    {
+      "ts": "2025-12-31 09:45:03",
+      "stage": "convert_all_end",
+      "memory_mb": 80.77
+    },
+    {
+      "ts": "2025-12-31 10:00:00",
+      "stage": "convert_all_start",
+      "memory_mb": 80.77
+    },
+    {
+      "ts": "2025-12-31 10:00:03",
+      "stage": "convert_all_end",
+      "memory_mb": 80.78
+    },
+    {
+      "ts": "2025-12-31 10:15:00",
+      "stage": "convert_all_start",
+      "memory_mb": 80.77
+    },
+    {
+      "ts": "2025-12-31 10:15:03",
+      "stage": "convert_all_end",
+      "memory_mb": 80.78
+    },
+    {
+      "ts": "2025-12-31 10:30:00",
+      "stage": "convert_all_start",
+      "memory_mb": 80.78
+    },
+    {
+      "ts": "2025-12-31 10:30:03",
+      "stage": "convert_all_end",
+      "memory_mb": 80.79
+    },
+    {
+      "ts": "2025-12-31 10:45:00",
+      "stage": "convert_all_start",
+      "memory_mb": 80.79
+    },
+    {
+      "ts": "2025-12-31 10:45:03",
+      "stage": "convert_all_end",
+      "memory_mb": 80.79
+    },
+    {
+      "ts": "2025-12-31 10:53:32",
+      "stage": "app_start",
+      "memory_mb": 67.55
+    },
+    {
+      "ts": "2025-12-31 10:53:36",
+      "stage": "app_start",
+      "memory_mb": 67.26
+    },
+    {
+      "ts": "2025-12-31 10:53:38",
+      "stage": "convert_all_start",
+      "memory_mb": 78.58
+    },
+    {
+      "ts": "2025-12-31 10:55:21",
+      "stage": "convert_all_start",
+      "memory_mb": 79.19
+    },
+    {
+      "ts": "2025-12-31 10:55:25",
+      "stage": "app_start",
+      "memory_mb": 67.43
+    },
+    {
+      "ts": "2025-12-31 10:55:26",
+      "stage": "convert_all_start",
+      "memory_mb": 78.7
+    },
+    {
+      "ts": "2025-12-31 10:55:28",
+      "stage": "convert_all_end",
+      "memory_mb": 79.23
+    },
+    {
+      "ts": "2025-12-31 11:00:00",
+      "stage": "convert_all_start",
+      "memory_mb": 79.34
+    },
+    {
+      "ts": "2025-12-31 11:00:03",
+      "stage": "convert_all_end",
+      "memory_mb": 79.35
+    },
+    {
+      "ts": "2025-12-31 11:15:00",
+      "stage": "convert_all_start",
+      "memory_mb": 79.48
+    },
+    {
+      "ts": "2025-12-31 11:15:04",
+      "stage": "convert_all_end",
+      "memory_mb": 79.5
+    },
+    {
+      "ts": "2025-12-31 11:16:20",
+      "stage": "app_start",
+      "memory_mb": 68.48
+    },
+    {
+      "ts": "2025-12-31 11:16:22",
+      "stage": "convert_all_start",
+      "memory_mb": 78.77
+    },
+    {
+      "ts": "2025-12-31 11:16:25",
+      "stage": "convert_all_end",
+      "memory_mb": 79.33
+    },
+    {
+      "ts": "2025-12-31 11:38:17",
+      "stage": "app_start",
+      "memory_mb": 68.22
+    },
+    {
+      "ts": "2025-12-31 11:45:00",
+      "stage": "convert_all_start",
+      "memory_mb": 80.11
+    },
+    {
+      "ts": "2025-12-31 11:45:04",
+      "stage": "convert_all_end",
+      "memory_mb": 80.86
+    },
+    {
+      "ts": "2025-12-31 12:00:00",
+      "stage": "convert_all_start",
+      "memory_mb": 80.9
+    },
+    {
+      "ts": "2025-12-31 12:00:04",
+      "stage": "convert_all_end",
+      "memory_mb": 80.93
+    },
+    {
+      "ts": "2025-12-31 12:15:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.0
+    },
+    {
+      "ts": "2025-12-31 12:15:03",
+      "stage": "convert_all_end",
+      "memory_mb": 81.02
+    },
+    {
+      "ts": "2025-12-31 12:30:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.04
+    },
+    {
+      "ts": "2025-12-31 12:30:03",
+      "stage": "convert_all_end",
+      "memory_mb": 81.04
+    },
+    {
+      "ts": "2025-12-31 12:45:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.05
+    },
+    {
+      "ts": "2025-12-31 12:45:03",
+      "stage": "convert_all_end",
+      "memory_mb": 81.06
+    },
+    {
+      "ts": "2025-12-31 13:00:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.06
+    },
+    {
+      "ts": "2025-12-31 13:00:04",
+      "stage": "convert_all_end",
+      "memory_mb": 81.06
+    },
+    {
+      "ts": "2025-12-31 14:45:20",
+      "stage": "app_start",
+      "memory_mb": 67.7
+    },
+    {
+      "ts": "2025-12-31 14:45:20",
+      "stage": "convert_all_start",
+      "memory_mb": 73.56
+    },
+    {
+      "ts": "2025-12-31 14:45:23",
+      "stage": "convert_all_end",
+      "memory_mb": 79.44
+    },
+    {
+      "ts": "2025-12-31 14:45:30",
+      "stage": "convert_all_start",
+      "memory_mb": 81.61
+    },
+    {
+      "ts": "2025-12-31 14:45:32",
+      "stage": "convert_all_end",
+      "memory_mb": 81.62
+    },
+    {
+      "ts": "2025-12-31 14:46:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.69
+    },
+    {
+      "ts": "2025-12-31 14:46:03",
+      "stage": "convert_all_end",
+      "memory_mb": 81.84
+    },
+    {
+      "ts": "2025-12-31 14:46:12",
+      "stage": "convert_all_start",
+      "memory_mb": 81.89
+    },
+    {
+      "ts": "2025-12-31 14:46:15",
+      "stage": "convert_all_end",
+      "memory_mb": 81.9
+    },
+    {
+      "ts": "2025-12-31 14:47:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.84
+    },
+    {
+      "ts": "2025-12-31 14:47:04",
+      "stage": "convert_all_end",
+      "memory_mb": 81.84
+    },
+    {
+      "ts": "2025-12-31 14:48:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.81
+    },
+    {
+      "ts": "2025-12-31 14:48:03",
+      "stage": "convert_all_end",
+      "memory_mb": 81.82
+    },
+    {
+      "ts": "2025-12-31 14:49:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.82
+    },
+    {
+      "ts": "2025-12-31 14:49:03",
+      "stage": "convert_all_end",
+      "memory_mb": 81.83
+    },
+    {
+      "ts": "2025-12-31 14:50:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.82
+    },
+    {
+      "ts": "2025-12-31 14:50:03",
+      "stage": "convert_all_end",
+      "memory_mb": 81.83
+    },
+    {
+      "ts": "2025-12-31 14:51:00",
+      "stage": "convert_all_start",
+      "memory_mb": 82.01
+    },
+    {
+      "ts": "2025-12-31 14:51:06",
+      "stage": "convert_all_end",
+      "memory_mb": 82.02
+    },
+    {
+      "ts": "2025-12-31 14:51:06",
+      "stage": "convert_all_end",
+      "memory_mb": 82.0
+    },
+    {
+      "ts": "2025-12-31 14:52:00",
+      "stage": "convert_all_start",
+      "memory_mb": 82.0
+    },
+    {
+      "ts": "2025-12-31 14:52:03",
+      "stage": "convert_all_end",
+      "memory_mb": 81.96
+    },
+    {
+      "ts": "2025-12-31 14:53:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.96
+    },
+    {
+      "ts": "2025-12-31 14:53:03",
+      "stage": "convert_all_end",
+      "memory_mb": 81.96
+    },
+    {
+      "ts": "2025-12-31 14:54:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.96
+    },
+    {
+      "ts": "2025-12-31 14:54:03",
+      "stage": "convert_all_end",
+      "memory_mb": 81.97
+    },
+    {
+      "ts": "2025-12-31 14:55:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.97
+    },
+    {
+      "ts": "2025-12-31 14:55:03",
+      "stage": "convert_all_end",
+      "memory_mb": 81.97
+    },
+    {
+      "ts": "2025-12-31 14:56:00",
+      "stage": "convert_all_start",
+      "memory_mb": 82.01
+    },
+    {
+      "ts": "2025-12-31 14:56:03",
+      "stage": "convert_all_end",
+      "memory_mb": 82.03
+    },
+    {
+      "ts": "2025-12-31 14:57:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.98
+    },
+    {
+      "ts": "2025-12-31 14:57:03",
+      "stage": "convert_all_end",
+      "memory_mb": 81.99
+    },
+    {
+      "ts": "2025-12-31 14:58:00",
+      "stage": "convert_all_start",
+      "memory_mb": 81.98
+    },
+    {
+      "ts": "2025-12-31 14:58:04",
+      "stage": "convert_all_end",
+      "memory_mb": 81.99
+    },
+    {
+      "ts": "2025-12-31 14:58:04",
+      "stage": "app_start",
+      "memory_mb": 67.69
+    },
+    {
+      "ts": "2025-12-31 14:58:04",
+      "stage": "convert_all_start",
+      "memory_mb": 73.74
+    },
+    {
+      "ts": "2025-12-31 14:58:06",
+      "stage": "convert_all_start",
+      "memory_mb": 79.54
+    },
+    {
+      "ts": "2025-12-31 14:58:09",
+      "stage": "convert_all_end",
+      "memory_mb": 79.68
+    },
+    {
+      "ts": "2025-12-31 14:58:10",
+      "stage": "convert_all_end",
+      "memory_mb": 79.69
+    },
+    {
+      "ts": "2025-12-31 14:58:26",
+      "stage": "app_start",
+      "memory_mb": 67.5
+    },
+    {
+      "ts": "2025-12-31 14:58:26",
+      "stage": "convert_all_start",
+      "memory_mb": 73.6
+    },
+    {
+      "ts": "2025-12-31 14:58:52",
+      "stage": "convert_all_start",
+      "memory_mb": 118.66
+    },
+    {
+      "ts": "2025-12-31 14:58:53",
+      "stage": "convert_all_end",
+      "memory_mb": 128.98
+    },
+    {
+      "ts": "2025-12-31 14:59:00",
+      "stage": "convert_all_start",
+      "memory_mb": 128.96
+    },
+    {
+      "ts": "2025-12-31 14:59:01",
+      "stage": "convert_all_end",
+      "memory_mb": 128.96
+    },
+    {
+      "ts": "2025-12-31 14:59:17",
+      "stage": "convert_all_start",
+      "memory_mb": 128.96
+    },
+    {
+      "ts": "2025-12-31 14:59:18",
+      "stage": "convert_all_end",
+      "memory_mb": 125.95
+    },
+    {
+      "ts": "2025-12-31 15:00:00",
+      "stage": "convert_all_start",
+      "memory_mb": 126.01
+    },
+    {
+      "ts": "2025-12-31 15:00:01",
+      "stage": "convert_all_end",
+      "memory_mb": 126.04
+    },
+    {
+      "ts": "2025-12-31 15:01:00",
+      "stage": "convert_all_start",
+      "memory_mb": 125.84
+    },
+    {
+      "ts": "2025-12-31 15:01:01",
+      "stage": "convert_all_end",
+      "memory_mb": 125.84
+    },
+    {
+      "ts": "2025-12-31 15:02:00",
+      "stage": "convert_all_start",
+      "memory_mb": 125.86
+    },
+    {
+      "ts": "2025-12-31 15:02:01",
+      "stage": "convert_all_end",
+      "memory_mb": 125.86
+    },
+    {
+      "ts": "2025-12-31 15:03:00",
+      "stage": "convert_all_start",
+      "memory_mb": 125.89
+    },
+    {
+      "ts": "2025-12-31 15:03:01",
+      "stage": "convert_all_end",
+      "memory_mb": 126.0
+    },
+    {
+      "ts": "2025-12-31 15:04:00",
+      "stage": "convert_all_start",
+      "memory_mb": 126.35
+    },
+    {
+      "ts": "2025-12-31 15:04:01",
+      "stage": "convert_all_end",
+      "memory_mb": 126.36
+    },
+    {
+      "ts": "2025-12-31 15:05:00",
+      "stage": "convert_all_start",
+      "memory_mb": 126.38
+    },
+    {
+      "ts": "2025-12-31 15:05:01",
+      "stage": "convert_all_end",
+      "memory_mb": 126.38
+    },
+    {
+      "ts": "2025-12-31 15:06:00",
+      "stage": "convert_all_start",
+      "memory_mb": 126.39
+    },
+    {
+      "ts": "2025-12-31 15:06:01",
+      "stage": "convert_all_end",
+      "memory_mb": 126.43
+    },
+    {
+      "ts": "2025-12-31 15:06:02",
+      "stage": "convert_all_end",
+      "memory_mb": 126.4
+    },
+    {
+      "ts": "2025-12-31 15:07:00",
+      "stage": "convert_all_start",
+      "memory_mb": 126.43
+    },
+    {
+      "ts": "2025-12-31 15:07:01",
+      "stage": "convert_all_end",
+      "memory_mb": 126.45
+    },
+    {
+      "ts": "2025-12-31 15:08:00",
+      "stage": "convert_all_start",
+      "memory_mb": 126.43
+    },
+    {
+      "ts": "2025-12-31 15:08:01",
+      "stage": "convert_all_end",
+      "memory_mb": 126.43
+    },
+    {
+      "ts": "2025-12-31 15:08:02",
+      "stage": "app_start",
+      "memory_mb": 67.5
+    },
+    {
+      "ts": "2025-12-31 15:08:02",
+      "stage": "convert_all_start",
+      "memory_mb": 73.8
+    },
+    {
+      "ts": "2025-12-31 15:08:04",
+      "stage": "convert_all_start",
+      "memory_mb": 80.23
+    },
+    {
+      "ts": "2025-12-31 15:08:09",
+      "stage": "convert_all_end",
+      "memory_mb": 80.52
+    },
+    {
+      "ts": "2025-12-31 15:08:10",
+      "stage": "convert_all_end",
+      "memory_mb": 80.53
+    },
+    {
+      "ts": "2025-12-31 15:08:17",
+      "stage": "convert_all_start",
+      "memory_mb": 80.54
+    },
+    {
+      "ts": "2025-12-31 15:08:18",
+      "stage": "convert_all_end",
+      "memory_mb": 90.04
+    },
+    {
+      "ts": "2025-12-31 15:08:36",
+      "stage": "convert_all_start",
+      "memory_mb": 90.59
+    },
+    {
+      "ts": "2025-12-31 15:08:36",
+      "stage": "convert_all_end",
+      "memory_mb": 86.96
+    },
+    {
+      "ts": "2025-12-31 15:09:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.22
+    },
+    {
+      "ts": "2025-12-31 15:09:05",
+      "stage": "convert_all_end",
+      "memory_mb": 87.41
+    },
+    {
+      "ts": "2025-12-31 15:10:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.43
+    },
+    {
+      "ts": "2025-12-31 15:10:05",
+      "stage": "convert_all_end",
+      "memory_mb": 87.49
+    },
+    {
+      "ts": "2025-12-31 15:11:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.44
+    },
+    {
+      "ts": "2025-12-31 15:11:05",
+      "stage": "convert_all_end",
+      "memory_mb": 87.45
+    },
+    {
+      "ts": "2025-12-31 15:12:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.46
+    },
+    {
+      "ts": "2025-12-31 15:12:04",
+      "stage": "convert_all_end",
+      "memory_mb": 87.48
+    },
+    {
+      "ts": "2025-12-31 15:13:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.48
+    },
+    {
+      "ts": "2025-12-31 15:13:04",
+      "stage": "convert_all_end",
+      "memory_mb": 87.65
+    },
+    {
+      "ts": "2025-12-31 15:14:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.64
+    },
+    {
+      "ts": "2025-12-31 15:14:04",
+      "stage": "convert_all_end",
+      "memory_mb": 87.65
+    },
+    {
+      "ts": "2025-12-31 15:15:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.6
+    },
+    {
+      "ts": "2025-12-31 15:15:05",
+      "stage": "convert_all_end",
+      "memory_mb": 87.61
+    },
+    {
+      "ts": "2025-12-31 15:16:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.6
+    },
+    {
+      "ts": "2025-12-31 15:16:05",
+      "stage": "convert_all_end",
+      "memory_mb": 87.61
+    },
+    {
+      "ts": "2025-12-31 15:17:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.6
+    },
+    {
+      "ts": "2025-12-31 15:17:04",
+      "stage": "convert_all_end",
+      "memory_mb": 87.61
+    },
+    {
+      "ts": "2025-12-31 15:18:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.6
+    },
+    {
+      "ts": "2025-12-31 15:18:05",
+      "stage": "convert_all_end",
+      "memory_mb": 87.67
+    },
+    {
+      "ts": "2025-12-31 15:19:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.66
+    },
+    {
+      "ts": "2025-12-31 15:19:05",
+      "stage": "convert_all_end",
+      "memory_mb": 87.67
+    },
+    {
+      "ts": "2025-12-31 15:20:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.65
+    },
+    {
+      "ts": "2025-12-31 15:20:05",
+      "stage": "convert_all_end",
+      "memory_mb": 87.7
+    },
+    {
+      "ts": "2025-12-31 15:21:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.71
+    },
+    {
+      "ts": "2025-12-31 15:21:10",
+      "stage": "convert_all_end",
+      "memory_mb": 87.79
+    },
+    {
+      "ts": "2025-12-31 15:21:10",
+      "stage": "convert_all_end",
+      "memory_mb": 87.75
+    },
+    {
+      "ts": "2025-12-31 15:22:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.75
+    },
+    {
+      "ts": "2025-12-31 15:22:05",
+      "stage": "convert_all_end",
+      "memory_mb": 87.76
+    },
+    {
+      "ts": "2025-12-31 15:23:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.75
+    },
+    {
+      "ts": "2025-12-31 15:23:05",
+      "stage": "convert_all_end",
+      "memory_mb": 87.81
+    },
+    {
+      "ts": "2025-12-31 15:24:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.8
+    },
+    {
+      "ts": "2025-12-31 15:24:05",
+      "stage": "convert_all_end",
+      "memory_mb": 87.81
+    },
+    {
+      "ts": "2025-12-31 15:25:00",
+      "stage": "convert_all_start",
+      "memory_mb": 87.8
+    },
+    {
+      "ts": "2025-12-31 15:25:05",
+      "stage": "convert_all_end",
+      "memory_mb": 87.58
+    },
+    {
+      "ts": "2025-12-31 15:25:15",
+      "stage": "app_start",
+      "memory_mb": 67.38
+    },
+    {
+      "ts": "2025-12-31 15:25:15",
+      "stage": "convert_all_start",
+      "memory_mb": 73.58
+    },
+    {
+      "ts": "2025-12-31 15:25:16",
+      "stage": "convert_all_end",
+      "memory_mb": 79.25
+    },
+    {
+      "ts": "2025-12-31 15:25:20",
+      "stage": "convert_all_start",
+      "memory_mb": 79.43
+    },
+    {
+      "ts": "2025-12-31 15:25:20",
+      "stage": "convert_all_end",
+      "memory_mb": 79.5
+    },
+    {
+      "ts": "2025-12-31 15:26:10",
+      "stage": "app_start",
+      "memory_mb": 67.5
+    },
+    {
+      "ts": "2025-12-31 15:26:10",
+      "stage": "convert_all_start",
+      "memory_mb": 73.75
+    },
+    {
+      "ts": "2025-12-31 15:26:11",
+      "stage": "convert_all_start",
+      "memory_mb": 87.04
+    },
+    {
+      "ts": "2025-12-31 15:27:00",
+      "stage": "convert_all_start",
+      "memory_mb": 93.08
+    },
+    {
+      "ts": "2025-12-31 15:28:00",
+      "stage": "convert_all_start",
+      "memory_mb": 97.53
+    },
+    {
+      "ts": "2025-12-31 15:28:17",
+      "stage": "app_start",
+      "memory_mb": 67.8
+    },
+    {
+      "ts": "2025-12-31 15:28:17",
+      "stage": "convert_all_start",
+      "memory_mb": 73.72
+    },
+    {
+      "ts": "2025-12-31 15:28:18",
+      "stage": "convert_all_start",
+      "memory_mb": 87.19
+    },
+    {
+      "ts": "2025-12-31 15:29:00",
+      "stage": "convert_all_start",
+      "memory_mb": 92.43
+    },
+    {
+      "ts": "2025-12-31 15:30:00",
+      "stage": "convert_all_start",
+      "memory_mb": 97.08
+    },
+    {
+      "ts": "2025-12-31 15:30:08",
+      "stage": "app_start",
+      "memory_mb": 67.59
+    },
+    {
+      "ts": "2025-12-31 15:30:08",
+      "stage": "convert_all_start",
+      "memory_mb": 73.73
+    },
+    {
+      "ts": "2025-12-31 15:30:09",
+      "stage": "convert_all_end",
+      "memory_mb": 93.13
+    },
+    {
+      "ts": "2025-12-31 15:30:09",
+      "stage": "convert_all_start",
+      "memory_mb": 93.24
+    },
+    {
+      "ts": "2025-12-31 15:30:10",
+      "stage": "convert_all_end",
+      "memory_mb": 93.27
+    },
+    {
+      "ts": "2025-12-31 15:30:17",
+      "stage": "convert_all_start",
+      "memory_mb": 93.27
+    },
+    {
+      "ts": "2025-12-31 15:30:18",
+      "stage": "convert_all_end",
+      "memory_mb": 98.91
+    },
+    {
+      "ts": "2025-12-31 15:31:00",
+      "stage": "convert_all_start",
+      "memory_mb": 99.57
+    },
+    {
+      "ts": "2025-12-31 15:31:01",
+      "stage": "convert_all_end",
+      "memory_mb": 99.59
+    },
+    {
+      "ts": "2025-12-31 15:32:00",
+      "stage": "convert_all_start",
+      "memory_mb": 99.52
+    },
+    {
+      "ts": "2025-12-31 15:32:01",
+      "stage": "convert_all_end",
+      "memory_mb": 99.53
+    },
+    {
+      "ts": "2025-12-31 15:33:00",
+      "stage": "convert_all_start",
+      "memory_mb": 99.6
+    },
+    {
+      "ts": "2025-12-31 15:33:01",
+      "stage": "convert_all_end",
+      "memory_mb": 99.7
+    },
+    {
+      "ts": "2025-12-31 15:34:00",
+      "stage": "convert_all_start",
+      "memory_mb": 99.71
+    },
+    {
+      "ts": "2025-12-31 15:34:01",
+      "stage": "convert_all_end",
+      "memory_mb": 99.72
+    },
+    {
+      "ts": "2025-12-31 15:35:00",
+      "stage": "convert_all_start",
+      "memory_mb": 99.71
+    },
+    {
+      "ts": "2025-12-31 15:35:01",
+      "stage": "convert_all_end",
+      "memory_mb": 99.72
+    },
+    {
+      "ts": "2025-12-31 15:36:00",
+      "stage": "convert_all_start",
+      "memory_mb": 99.92
+    },
+    {
+      "ts": "2025-12-31 15:36:02",
+      "stage": "convert_all_end",
+      "memory_mb": 100.17
+    },
+    {
+      "ts": "2025-12-31 15:37:00",
+      "stage": "convert_all_start",
+      "memory_mb": 100.18
+    },
+    {
+      "ts": "2025-12-31 15:37:01",
+      "stage": "convert_all_end",
+      "memory_mb": 100.21
+    },
+    {
+      "ts": "2025-12-31 15:38:00",
+      "stage": "convert_all_start",
+      "memory_mb": 100.21
+    },
+    {
+      "ts": "2025-12-31 15:38:01",
+      "stage": "convert_all_end",
+      "memory_mb": 100.21
+    },
+    {
+      "ts": "2025-12-31 15:39:00",
+      "stage": "convert_all_start",
+      "memory_mb": 100.21
+    },
+    {
+      "ts": "2025-12-31 15:39:01",
+      "stage": "convert_all_end",
+      "memory_mb": 100.21
+    },
+    {
+      "ts": "2025-12-31 15:40:00",
+      "stage": "convert_all_start",
+      "memory_mb": 100.21
+    },
+    {
+      "ts": "2025-12-31 15:40:01",
+      "stage": "convert_all_end",
+      "memory_mb": 100.21
+    },
+    {
+      "ts": "2025-12-31 15:41:00",
+      "stage": "convert_all_start",
+      "memory_mb": 100.3
+    },
+    {
+      "ts": "2025-12-31 15:41:01",
+      "stage": "convert_all_end",
+      "memory_mb": 100.31
+    },
+    {
+      "ts": "2025-12-31 15:42:00",
+      "stage": "convert_all_start",
+      "memory_mb": 100.27
+    },
+    {
+      "ts": "2025-12-31 15:42:01",
+      "stage": "convert_all_end",
+      "memory_mb": 100.27
+    },
+    {
+      "ts": "2025-12-31 15:43:00",
+      "stage": "convert_all_start",
+      "memory_mb": 100.27
+    },
+    {
+      "ts": "2025-12-31 15:43:01",
+      "stage": "convert_all_end",
+      "memory_mb": 100.27
+    },
+    {
+      "ts": "2025-12-31 15:44:00",
+      "stage": "convert_all_start",
+      "memory_mb": 100.29
+    },
+    {
+      "ts": "2025-12-31 15:44:01",
+      "stage": "convert_all_end",
+      "memory_mb": 100.29
+    },
+    {
+      "ts": "2025-12-31 15:45:00",
+      "stage": "convert_all_start",
+      "memory_mb": 100.28
+    },
+    {
+      "ts": "2025-12-31 15:45:01",
+      "stage": "convert_all_end",
+      "memory_mb": 100.28
+    },
+    {
+      "ts": "2025-12-31 15:46:00",
+      "stage": "convert_all_start",
+      "memory_mb": 100.28
+    },
+    {
+      "ts": "2025-12-31 15:46:01",
+      "stage": "convert_all_end",
+      "memory_mb": 100.28
+    },
+    {
+      "ts": "2025-12-31 15:47:00",
+      "stage": "convert_all_start",
+      "memory_mb": 100.31
+    },
+    {
+      "ts": "2025-12-31 15:47:00",
+      "stage": "convert_all_end",
+      "memory_mb": 100.32
+    },
+    {
+      "ts": "2025-12-31 15:48:00",
+      "stage": "convert_all_start",
+      "memory_mb": 100.32
+    },
+    {
+      "ts": "2025-12-31 15:48:00",
+      "stage": "convert_all_end",
+      "memory_mb": 100.32
+    },
+    {
+      "ts": "2025-12-31 15:49:00",
+      "stage": "convert_all_start",
+      "memory_mb": 96.27
+    },
+    {
+      "ts": "2025-12-31 15:49:00",
+      "stage": "convert_all_end",
+      "memory_mb": 96.27
+    },
+    {
+      "ts": "2025-12-31 15:50:00",
+      "stage": "convert_all_start",
+      "memory_mb": 96.27
+    },
+    {
+      "ts": "2025-12-31 15:50:00",
+      "stage": "convert_all_end",
+      "memory_mb": 96.27
+    },
+    {
+      "ts": "2025-12-31 15:51:00",
+      "stage": "convert_all_start",
+      "memory_mb": 96.3
+    }
+  ]
+}}

@@ -1,0 +1,18 @@
+"""
+Convert Pro 3 - Version Management
+버전 정보를 중앙에서 관리
+"""
+
+# 버전 정보 (이 파일만 수정하면 됨)
+VERSION_MAJOR = 1
+VERSION_MINOR = 2
+VERSION_PATCH = 0
+
+# 자동 생성
+VERSION = f"v{VERSION_MAJOR}.{VERSION_MINOR}.{VERSION_PATCH}"
+VERSION_SHORT = f"v{VERSION_MAJOR}.{VERSION_MINOR}"  # v1.2
+VERSION_NUMBER = f"{VERSION_MAJOR}.{VERSION_MINOR}.{VERSION_PATCH}"  # 1.2.0
+
+# 앱 정보
+APP_NAME = "Convert Pro 3"
+APP_FULL_NAME = f"{APP_NAME} {VERSION_SHORT}"
