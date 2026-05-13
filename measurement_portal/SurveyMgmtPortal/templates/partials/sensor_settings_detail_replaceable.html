@@ -1,0 +1,291 @@
+{% if selected_logger and selected_channel %}
+<div class="sns-logger-head sns-sensor-head">
+  <div class="sns-logger-title sns-sensor-title-stack">
+    <span class="sns-sensor-kind-head">{{ selected_channel|sns_ch_kind_title }}</span>
+    <strong class="sns-mono sns-sensor-code-head">{{ selected_channel.sensor_code or '—' }}</strong>
+  </div>
+  {% if can_edit %}
+  <div class="sns-logger-head-actions">
+    <form method="post" action="{{ url_for('site_workspace_sensor_settings', site_id=site.id) }}" class="sns-inline-form"
+          onsubmit='return confirm({{ ("정말 삭제하시겠습니까?\n\n센서 「" ~ (selected_channel|sns_ch_auto_name) ~ "」와 측정값이 함께 삭제될 수 있습니다.") | tojson }});'>
+      <input type="hidden" name="_action" value="delete_sensor"/>
+      <input type="hidden" name="sensor_channel_id" value="{{ selected_channel.id }}"/>
+      <input type="hidden" name="sensor_logger_id" value="{{ selected_logger.id }}"/>
+      <button type="submit" class="sns-capture-btn sns-capture-btn-danger">센서삭제</button>
+    </form>
+    <button type="submit" form="sns-frm-sensor-detail" id="sns-btn-save-full" class="sns-capture-btn sns-capture-btn-primary">저장</button>
+  </div>
+  {% endif %}
+</div>
+
+{% if can_edit %}
+<form id="sns-frm-sensor-detail" method="post" action="{{ url_for('site_workspace_sensor_settings', site_id=site.id) }}" class="sns-sensor-form">
+  <input type="hidden" name="_action" value="update_sensor_detail"/>
+  <input type="hidden" name="sensor_channel_id" value="{{ selected_channel.id }}"/>
+  <input type="hidden" name="sensor_logger_id" value="{{ selected_logger.id }}"/>
+  {% set sns_tilt = selected_sensor_kind_id in ['building_tilt', 'structure_tilt'] %}
+  {% set sns_crack = selected_sensor_kind_id == 'crack_meter' %}
+  {% set sns_gw = selected_sensor_kind_id == 'groundwater' %}
+  {% set sns_load = selected_sensor_kind_id == 'load_cell' %}
+  {% set sns_ss = selected_sensor_kind_id == 'surface_settlement' %}
+  {% set sns_inc = selected_sensor_kind_id == 'inclinometer' %}
+  {% set sns_idp = selected_sensor_kind_id == 'internal_displacement' %}
+  {% set sns_len_mm = sns_inc or sns_idp %}
+  {% set sns_vib = selected_sensor_kind_id in ['vibration', 'vibration_3axis'] %}
+
+  <div class="sns-detail-scroll" id="sns-sensor-scroll">
+  {% if not selected_channel.is_active %}
+  <p class="form-hint small" style="margin:0 0 10px 0;padding:8px 10px;border-left:3px solid #f59e0b;background:rgba(245,158,11,0.08);border-radius:4px;">
+    <strong>미사용 상태입니다.</strong> 왼쪽 「인덱스」에 CSV 열 인덱스(0부터)를 맞춘 뒤 「변경」을 누르면 적재·표시 대상으로 켜집니다.
+    세부 설정만 저장하려면 아래 「저장」을 사용하세요. 적재에서 빼려면 「사용여부」를 끄고 「저장」하세요.
+  </p>
+  {% endif %}
+  <div class="sns-kv-sheet">
+    <div class="sns-kv-row sns-kv-row--checks">
+      <div class="sns-kv-checks-wrap">
+        <label class="sns-check">
+          <input type="checkbox" name="is_active" value="1" {% if selected_channel.is_active %}checked{% endif %}/>
+          <span>사용여부</span>
+        </label>
+        <label class="sns-check">
+          <input type="checkbox" name="sms_enabled" value="1" {% if selected_channel.sms_enabled %}checked{% endif %}/>
+          <span>SMS발송여부</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="sns-kv-row sns-kv-row--split">
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">센서코드</div>
+        <div class="sns-kv-control"><input type="text" name="sensor_code" class="sns-kv-input" value="{{ selected_channel.sensor_code or '' }}" autocomplete="off"/></div>
+      </div>
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">시리얼번호</div>
+        <div class="sns-kv-control"><input type="text" name="sensor_serial" class="sns-kv-input" value="{{ selected_channel.serial_number or '' }}" autocomplete="off"/></div>
+      </div>
+    </div>
+
+    <div class="sns-kv-row sns-kv-row--full">
+      <div class="sns-kv-label">연결센서코드</div>
+      <div class="sns-kv-control">
+        <input type="text" name="linked_sensor_codes" class="sns-kv-input" value="{{ selected_channel.linked_sensor_codes or '' }}" autocomplete="off" placeholder="{% if sns_load %}예: LC1-2, LC1-3 또는 -2 -3{% elif sns_inc %}예: I1-2, I1-3 또는 -2 -3{% elif sns_idp %}예: TN002, TN003 또는 -2 -3{% else %}예: V1-Y, V1-Z 또는 -Y -Z{% endif %}"/>
+        <p class="form-hint" style="margin-top:6px;font-size:12px;margin-bottom:0">{% if sns_load %}쉼표·공백 구분. <strong>-2</strong>, <strong>-3</strong> 는 위 「센서코드」에 붙여 조회합니다(예: 센서코드 LC1 → LC1-2, LC1-3).{% elif sns_inc %}쉼표·공백 구분. 위 「센서코드」에는 <strong>가장 하부 단(기준단)</strong>을 둡니다(예: <strong>I1-1</strong>). 연결란에는 <strong>하부→상부</strong>로 올라가는 순서대로 적습니다(예: <strong>I1-2, I1-3</strong> 또는 대표가 I1-1일 때 <strong>-2 -3</strong> → I1-2, I1-3). 그래프·표의 열 순서도 이와 같습니다.{% elif sns_idp %}쉼표·공백 구분. 대표 「센서코드」는 <strong>가장 하부 세그먼트</strong>(예: <strong>TN001</strong>). 연결란은 <strong>하부→상부</strong> 순(예: <strong>TN002, TN003</strong> 또는 <strong>-2 -3</strong>). CSV 한 행에 시각 뒤 <code>TN001,-98.38,TN002,…</code> 형태로 들어오면 로거마다 값 열만 맞추면 됩니다.{% else %}쉼표·공백 구분. <strong>-Y</strong>, <strong>-Z</strong> 는 위 「센서코드」에 붙여 조회합니다(예: 센서코드 V1 → V1-Y, V1-Z).{% endif %}</p>
+      </div>
+    </div>
+
+    <div class="sns-kv-row sns-kv-row--full">
+      <div class="sns-kv-label">센서종류</div>
+      <div class="sns-kv-control">
+        <select id="sns-sensor-kind" name="sensor_kind" class="sns-kv-input sns-kv-select">
+          <option value="">-</option>
+          {% for k in sensor_kinds %}
+          <option value="{{ k.id }}" {% if selected_sensor_kind_id == k.id %}selected{% endif %}>{{ k.label_ko }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="sns-kv-row sns-kv-row--split">
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">센서명</div>
+        <div class="sns-kv-control"><input type="text" class="sns-kv-input" value="{{ selected_channel|sns_ch_auto_name }}" readonly tabindex="-1"/></div>
+      </div>
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">소수점자리</div>
+        <div class="sns-kv-control"><input type="number" name="decimal_places" class="sns-kv-input" value="{% if selected_channel.decimal_places is not none %}{{ selected_channel.decimal_places }}{% elif sns_vib %}{{ vibration_form_defaults.decimal_places }}{% else %}2{% endif %}" min="0" max="10" step="1"/></div>
+      </div>
+    </div>
+
+    </div>
+
+    {% if sns_gw %}
+    <div class="sns-kv-sheet">
+      <div class="sns-kv-row sns-kv-row--full">
+        <div class="sns-kv-label">파이프심도(m)</div>
+        <div class="sns-kv-control">
+          <input type="text" name="pipe_depth_m" class="sns-kv-input" inputmode="decimal" autocomplete="off" placeholder="예: 10.25" value="{% if selected_channel.pipe_depth_m is not none %}{{ selected_channel.pipe_depth_m }}{% endif %}"/>
+          <p class="form-hint" style="margin-top:6px;font-size:12px;margin-bottom:0">적재 계산식 1번에서 <strong>pipe</strong> 변수로 쓰입니다. 25 m급 예: <code>m*5-pipe</code> (m은 스케일 적용 후 V).</p>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% if sns_len_mm %}
+    <div class="sns-kv-sheet">
+      <div class="sns-kv-row sns-kv-row--full">
+        <div class="sns-kv-label">센서길이(mm)</div>
+        <div class="sns-kv-control">
+          <input type="text" name="sensor_length_mm" class="sns-kv-input" inputmode="decimal" autocomplete="off" placeholder="예: 1000" value="{% if selected_channel.sensor_length_mm is not none %}{{ selected_channel.sensor_length_mm }}{% endif %}"/>
+          <p class="form-hint" style="margin-top:6px;font-size:12px;margin-bottom:0">적재 2번 식 기본: <code>L*tan(r1*pi/180)</code> — <strong>L</strong>이 여기 값입니다(기본 1000). 1번은 보통 <code>m</code>(스케일 적용 후 각도 °).{% if sns_idp %} 내공변위 세그먼트마다 동일 길이를 쓰는 모델일 때 공통으로 둡니다.{% endif %}</p>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% if sns_load %}
+    <div class="sns-kv-sheet">
+      <div class="sns-kv-row sns-kv-row--full">
+        <div class="sns-kv-label">게이지팩터(Ton/단위m)</div>
+        <div class="sns-kv-control">
+          <input type="text" name="gauge_factor" class="sns-kv-input" inputmode="decimal" autocomplete="off" placeholder="예: 1.0" value="{% if selected_channel.gauge_factor is not none %}{{ selected_channel.gauge_factor }}{% endif %}"/>
+          <p class="form-hint" style="margin-top:6px;font-size:12px;margin-bottom:0">적재 계산식에서 <strong>gf</strong> 변수로 사용됩니다. 기본 1번식: <code>m*gf</code> (결과 Ton).</p>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+  <div class="sns-level-panel sns-capture-box sns-level-in-scroll" aria-label="관리기준">
+    <div class="sns-level-grid">
+      <div class="sns-level-head">1차관리(주)</div>
+      <div class="sns-level-head">2차관리(주)</div>
+      <div class="sns-level-head">3차관리(주)</div>
+      <div class="sns-level-cell">
+        <input type="text" inputmode="decimal" name="level1_primary" class="sns-kv-input sns-level-val" value="{% if selected_channel.level1_primary is not none %}{{ selected_channel.level1_primary }}{% elif sns_tilt %}{{ tilt_mgmt_mm['level1_primary'] }}{% elif sns_crack %}{{ crack_mgmt_mm['level1_primary'] }}{% elif sns_ss %}{{ surface_settlement_mgmt_mm['level1_primary'] }}{% elif sns_vib %}{{ vibration_form_defaults.management.level1_primary }}{% endif %}"/>
+      </div>
+      <div class="sns-level-cell">
+        <input type="text" inputmode="decimal" name="level2_primary" class="sns-kv-input sns-level-val" value="{% if selected_channel.level2_primary is not none %}{{ selected_channel.level2_primary }}{% elif sns_tilt %}{{ tilt_mgmt_mm['level2_primary'] }}{% elif sns_crack %}{{ crack_mgmt_mm['level2_primary'] }}{% elif sns_ss %}{{ surface_settlement_mgmt_mm['level2_primary'] }}{% endif %}"/>
+      </div>
+      <div class="sns-level-cell">
+        <input type="text" inputmode="decimal" name="level3_primary" class="sns-kv-input sns-level-val" value="{% if selected_channel.level3_primary is not none %}{{ selected_channel.level3_primary }}{% elif sns_tilt %}{{ tilt_mgmt_mm['level3_primary'] }}{% elif sns_crack %}{{ crack_mgmt_mm['level3_primary'] }}{% elif sns_ss %}{{ surface_settlement_mgmt_mm['level3_primary'] }}{% endif %}"/>
+      </div>
+      <div class="sns-level-head">1차관리(보조)</div>
+      <div class="sns-level-head">2차관리(보조)</div>
+      <div class="sns-level-head">3차관리(보조)</div>
+      <div class="sns-level-cell">
+        <input type="text" inputmode="decimal" name="level1_secondary" class="sns-kv-input sns-level-val" value="{% if selected_channel.level1_secondary is not none %}{{ selected_channel.level1_secondary }}{% elif sns_tilt %}{{ tilt_mgmt_mm['level1_secondary'] }}{% elif sns_crack %}{{ crack_mgmt_mm['level1_secondary'] }}{% elif sns_ss %}{{ surface_settlement_mgmt_mm['level1_secondary'] }}{% endif %}"/>
+      </div>
+      <div class="sns-level-cell">
+        <input type="text" inputmode="decimal" name="level2_secondary" class="sns-kv-input sns-level-val" value="{% if selected_channel.level2_secondary is not none %}{{ selected_channel.level2_secondary }}{% elif sns_tilt %}{{ tilt_mgmt_mm['level2_secondary'] }}{% elif sns_crack %}{{ crack_mgmt_mm['level2_secondary'] }}{% elif sns_ss %}{{ surface_settlement_mgmt_mm['level2_secondary'] }}{% endif %}"/>
+      </div>
+      <div class="sns-level-cell">
+        <input type="text" inputmode="decimal" name="level3_secondary" class="sns-kv-input sns-level-val" value="{% if selected_channel.level3_secondary is not none %}{{ selected_channel.level3_secondary }}{% elif sns_tilt %}{{ tilt_mgmt_mm['level3_secondary'] }}{% elif sns_crack %}{{ crack_mgmt_mm['level3_secondary'] }}{% elif sns_ss %}{{ surface_settlement_mgmt_mm['level3_secondary'] }}{% endif %}"/>
+      </div>
+    </div>
+  </div>
+
+  <div class="sns-kv-sheet">
+    <div class="sns-kv-row sns-kv-row--full">
+      <div class="sns-kv-label">설치위치</div>
+      <div class="sns-kv-control"><input type="text" name="install_location" class="sns-kv-input" value="{{ selected_channel.install_location or '' }}"/></div>
+    </div>
+    <div class="sns-kv-row sns-kv-row--split">
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">설치일</div>
+        <div class="sns-kv-control"><input type="date" name="install_date" class="sns-kv-input" value="{{ (selected_channel.install_date or '')[:10] }}"/></div>
+      </div>
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">단위</div>
+        <div class="sns-kv-control"><input type="text" name="unit" class="sns-kv-input" value="{{ selected_channel.unit or '' }}"/></div>
+      </div>
+    </div>
+    <div class="sns-kv-row sns-kv-row--full">
+      <div class="sns-kv-label">설명</div>
+      <div class="sns-kv-control"><input type="text" name="sensor_memo" class="sns-kv-input" value="{{ selected_channel.memo or '' }}"/></div>
+    </div>
+    <div class="sns-kv-row sns-kv-row--split">
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">차트 Y 최소</div>
+        <div class="sns-kv-control"><input type="text" name="chart_y_min" class="sns-kv-input" inputmode="decimal" value="{% if selected_channel.chart_y_min is not none %}{{ selected_channel.chart_y_min }}{% elif sns_vib %}{{ vibration_form_defaults.chart_y_min }}{% endif %}"/></div>
+      </div>
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">차트 Y 최대</div>
+        <div class="sns-kv-control"><input type="text" name="chart_y_max" class="sns-kv-input" inputmode="decimal" value="{% if selected_channel.chart_y_max is not none %}{{ selected_channel.chart_y_max }}{% elif sns_vib %}{{ vibration_form_defaults.chart_y_max }}{% endif %}"/></div>
+      </div>
+    </div>
+    <div class="sns-kv-formulas">
+      <div class="sns-kv-row sns-kv-row--split">
+        <div class="sns-kv-cell">
+          <div class="sns-kv-label">1번계산식</div>
+          <div class="sns-kv-control"><input type="text" name="calc_formula_1" class="sns-kv-input" value="{% if selected_channel.calc_formula_1 %}{{ selected_channel.calc_formula_1 }}{% elif sns_crack %}{{ crack_calc_formula_1_default }}{% elif sns_gw %}{{ groundwater_calc_formula_1_default }}{% elif sns_load %}{{ load_cell_calc_formula_1_default }}{% elif sns_ss %}{{ surface_settlement_calc_formula_1_default }}{% endif %}"/></div>
+        </div>
+        <div class="sns-kv-cell">
+          <div class="sns-kv-label">2번계산식</div>
+          <div class="sns-kv-control"><input type="text" name="calc_formula_2" class="sns-kv-input" value="{{ selected_channel.calc_formula_2 or '' }}"/></div>
+        </div>
+      </div>
+      <div class="sns-kv-row sns-kv-row--split">
+        <div class="sns-kv-cell">
+          <div class="sns-kv-label">3번계산식</div>
+          <div class="sns-kv-control"><input type="text" name="calc_formula_3" class="sns-kv-input" value="{{ selected_channel.calc_formula_3 or '' }}"/></div>
+        </div>
+        <div class="sns-kv-cell">
+          <div class="sns-kv-label">4번계산식</div>
+          <div class="sns-kv-control"><input type="text" name="calc_formula_4" class="sns-kv-input" value="{{ selected_channel.calc_formula_4 or '' }}"/></div>
+        </div>
+      </div>
+      <div class="sns-kv-row sns-kv-row--split">
+        <div class="sns-kv-cell">
+          <div class="sns-kv-label">5번계산식</div>
+          <div class="sns-kv-control"><input type="text" name="calc_formula_5" class="sns-kv-input" value="{{ selected_channel.calc_formula_5 or '' }}"/></div>
+        </div>
+        <div class="sns-kv-cell">
+          <div class="sns-kv-label">6번계산식</div>
+          <div class="sns-kv-control"><input type="text" name="calc_formula_6" class="sns-kv-input" value="{{ selected_channel.calc_formula_6 or '' }}"/></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+</form>
+{% else %}
+<div class="sns-detail-scroll" id="sns-sensor-scroll">
+<div class="sns-sensor-readonly muted small">
+  <p>CSV 시계열: 시각 칼럼은 로거 설정입니다. 측정값 열은 왼쪽 「인덱스」(맨 왼쪽부터 0)이며, DB에도 같은 값(channel_index)으로 저장됩니다.</p>
+</div>
+</div>
+{% endif %}
+
+{% elif selected_logger %}
+<div class="sns-detail-scroll" id="sns-sensor-scroll">
+  <div class="sns-sensor-empty-banner">
+    <p class="sns-sensor-empty-title muted">센서 미선택</p>
+    <p class="form-hint small">왼쪽 목록에서 센서를 누르면 저장된 설정만 채워집니다.</p>
+  </div>
+  <div class="sns-kv-sheet sns-kv-sheet--placeholder" aria-hidden="true">
+    <div class="sns-kv-row sns-kv-row--checks">
+      <div class="sns-kv-checks-wrap">
+        <label class="sns-check"><input type="checkbox" disabled/><span>사용여부</span></label>
+        <label class="sns-check"><input type="checkbox" disabled/><span>SMS발송여부</span></label>
+      </div>
+    </div>
+    <div class="sns-kv-row sns-kv-row--split">
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">센서코드</div>
+        <div class="sns-kv-control"><input type="text" class="sns-kv-input" disabled value=""/></div>
+      </div>
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">시리얼번호</div>
+        <div class="sns-kv-control"><input type="text" class="sns-kv-input" disabled value=""/></div>
+      </div>
+    </div>
+    <div class="sns-kv-row sns-kv-row--split">
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">센서명</div>
+        <div class="sns-kv-control"><input type="text" class="sns-kv-input" disabled value=""/></div>
+      </div>
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">소수점자리</div>
+        <div class="sns-kv-control"><input type="text" class="sns-kv-input" disabled value=""/></div>
+      </div>
+    </div>
+    <div class="sns-kv-row sns-kv-row--full">
+      <div class="sns-kv-label">센서종류</div>
+      <div class="sns-kv-control"><select class="sns-kv-input sns-kv-select" disabled><option>-</option></select></div>
+    </div>
+    <div class="sns-kv-row sns-kv-row--full">
+      <div class="sns-kv-label">설치위치</div>
+      <div class="sns-kv-control"><input type="text" class="sns-kv-input" disabled value=""/></div>
+    </div>
+    <div class="sns-kv-row sns-kv-row--split">
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">설치일</div>
+        <div class="sns-kv-control"><input type="text" class="sns-kv-input" disabled value=""/></div>
+      </div>
+      <div class="sns-kv-cell">
+        <div class="sns-kv-label">단위</div>
+        <div class="sns-kv-control"><input type="text" class="sns-kv-input" disabled value=""/></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+<p class="muted">로거를 먼저 선택해 주세요.</p>
+{% endif %}

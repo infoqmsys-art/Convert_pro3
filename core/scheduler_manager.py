@@ -32,9 +32,9 @@ class SchedulerManager:
         self.thread = None
         self.running = False
 
-        # 분 단위 중복 실행 방지
+        # 중복 실행 방지 (hour+minute 튜플 — minute만 저장 시 매시 5분마다 스킵되는 버그 방지)
         self.last_convert_minute = None              # 자동 변환용
-        self.last_interval_minute = {}               # gen_interval용
+        self.last_interval_time = {}                 # gen_interval용 (시간+분 저장)
 
     # ============================================================
     # 스케줄러 시작 / 종료
@@ -75,65 +75,82 @@ class SchedulerManager:
     # ============================================================
     def _handle_auto_convert(self, now: datetime.datetime):
         """
-        매 20분마다 자동 변환 실행
-        - 실행 시간: 1분, 21분, 41분
-        - 같은 분 중복 실행 방지
+        config.json __scheduler__.auto_convert_minutes 분에 맞춰 자동 변환.
+        기본 [5,25,45]. 빈 목록이면 자동 변환 없음. 같은 시+분 중복 실행 방지.
         """
-        RUN_MINUTES = {1, 21, 41}
+        try:
+            mins = self.controller.config.get_auto_convert_minutes()
+        except Exception:
+            mins = [5, 25, 45]
+        run_minutes = set(mins)
+        if not run_minutes:
+            return
 
-        # 이미 이 분에 실행했으면 패스
-        if self.last_convert_minute == now.minute:
+        # 이미 이 시각(시+분)에 실행했으면 패스
+        current_hm = (now.hour, now.minute)
+        if self.last_convert_minute == current_hm:
             return
 
         # 설정된 분이면 실행
-        if now.minute in RUN_MINUTES:
+        if now.minute in run_minutes:
             _safe_log(self.logger, f"[Scheduler] 자동 변환 트리거 → convert_now() at {now.strftime('%H:%M')}")
             self.controller.convert_now()
-            self.last_convert_minute = now.minute
+            self.last_convert_minute = current_hm
 
     # ============================================================
     # __gen_interval__ 처리
     # ============================================================
     def _handle_gen_interval(self, now: datetime.datetime):
+        """gen_interval 처리 (Site 레벨 포함)"""
         cfg_data = self.controller.config.data
 
-        for company, folders in cfg_data.items():
-            if company.startswith("__") or not isinstance(folders, dict):
+        for company, sites in cfg_data.items():
+            if company.startswith("__") or not isinstance(sites, dict):
                 continue
 
-            for folder, folder_dict in folders.items():
-                if folder.startswith("__") or not isinstance(folder_dict, dict):
+            for site_name, site_data in sites.items():
+                if site_name.startswith("__") or not isinstance(site_data, dict):
                     continue
 
-                abs_path = folder_dict.get("__absolute_path__", "")
-                if not abs_path:
-                    continue
-
-                for filename, file_cfg in folder_dict.items():
-                    if filename.startswith("__") or not isinstance(file_cfg, dict):
+                for folder, folder_dict in site_data.items():
+                    if folder.startswith("__") or not isinstance(folder_dict, dict):
                         continue
 
-                    interval = int(file_cfg.get("__gen_interval__", 0) or 0)
-                    if interval <= 0:
+                    abs_path = folder_dict.get("__absolute_path__", "")
+                    if not abs_path:
                         continue
 
-                    if now.minute % interval != 0:
-                        continue
+                    for filename, file_cfg in folder_dict.items():
+                        # 파일명은 .csv로 끝나고, file_cfg는 dict여야 함
+                        if filename.startswith("__") or not filename.lower().endswith(".csv"):
+                            continue
+                        
+                        if not isinstance(file_cfg, dict):
+                            continue
 
-                    key = f"{company}/{folder}/{filename}"
+                        interval = int(file_cfg.get("__gen_interval__", 0) or 0)
+                        if interval <= 0:
+                            continue
 
-                    if self.last_interval_minute.get(key) == now.minute:
-                        continue
+                        if now.minute % interval != 0:
+                            continue
 
-                    csv_path = os.path.join(abs_path, filename)
-                    self._append_interval_row(csv_path)
+                        key = f"{company}/{site_name}/{folder}/{filename}"
 
-                    _safe_log(
-                        self.logger,
-                        f"[Scheduler] gen_interval row 생성: {key} ({interval}분)"
-                    )
+                        # 시간+분 조합으로 중복 체크 (60분 주기 문제 해결)
+                        time_key = (now.hour, now.minute)
+                        if self.last_interval_time.get(key) == time_key:
+                            continue
 
-                    self.last_interval_minute[key] = now.minute
+                        csv_path = os.path.join(abs_path, filename)
+                        self._append_interval_row(csv_path)
+
+                        _safe_log(
+                            self.logger,
+                            f"[Scheduler] gen_interval row 생성: {key} ({interval}분)"
+                        )
+
+                        self.last_interval_time[key] = time_key
 
     # ============================================================
     # 0값 row append (임시 구조)
@@ -158,27 +175,64 @@ class SchedulerManager:
         if df.empty:
             return
 
-        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 경로에서 폴더명(B열)과 파일명 확장자 제외(F열) 추출
+        folder_name = os.path.basename(os.path.dirname(csv_path))
+        file_stem   = os.path.splitext(os.path.basename(csv_path))[0]
 
+        # B열(index 1), F열(index 5) 컬럼명
+        b_col = df.columns[1] if len(df.columns) > 1 else None
+        f_col = df.columns[5] if len(df.columns) > 5 else None
+
+        # 시간은 분 단위로 반올림(초 제거)하여 timestamp 칼럼에 채움
+        now_min = datetime.datetime.now().replace(second=0, microsecond=0)
+        now_str = now_min.strftime("%Y-%m-%d %H:%M")
+
+        # 모든 비시간 컬럼은 0으로 채우고, 시간 컬럼만 현재 시각으로 설정
         new_row = {}
-        for col in df.columns:
-            dtype = df[col].dtype
-            if pd.api.types.is_float_dtype(dtype):
-                new_row[col] = 0.0
-            elif pd.api.types.is_integer_dtype(dtype):
-                new_row[col] = 0
-            else:
-                new_row[col] = ""
-        
         # timestamp 컬럼 찾기 (없으면 첫 번째 컬럼 사용)
         time_col = None
         if "timestamp" in df.columns:
             time_col = "timestamp"
         elif len(df.columns) > 0:
             time_col = df.columns[0]
-        
-        if time_col:
-            new_row[time_col] = now_str
+
+        # BG라는 헤더가 있으면 그 칼럼 위치까지(포함) 0으로 채우고,
+        # 없으면 기존 동작(모든 칼럼을 0)과 동일하게 마지막 칼럼까지 0으로 채움.
+        # BG는 엑셀식 열 문자('A'..'Z', 'AA'..)로 해석하여 위치 계산
+        def _excel_col_to_index(col_label: str) -> int:
+            if not isinstance(col_label, str) or col_label == "":
+                return 0
+            col_label = col_label.upper().strip()
+            idx = 0
+            for ch in col_label:
+                if 'A' <= ch <= 'Z':
+                    idx = idx * 26 + (ord(ch) - ord('A') + 1)
+                else:
+                    # 비정상 문자면 중단
+                    break
+            return max(0, idx - 1)
+
+        # 사용자가 의도한 엑셀 열(여기서는 'BG')까지 0으로 채움
+        target_excel_label = "BG"
+        try:
+            excel_idx = _excel_col_to_index(target_excel_label)
+            bg_index = min(excel_idx, len(df.columns) - 1)
+        except Exception:
+            bg_index = len(df.columns) - 1
+
+        for i, col in enumerate(df.columns):
+            if time_col and col == time_col:
+                new_row[col] = now_str
+            elif b_col and col == b_col:
+                new_row[col] = folder_name   # B열: 업체 폴더명
+            elif f_col and col == f_col:
+                new_row[col] = file_stem     # F열: 파일명(확장자 제외)
+            else:
+                if i <= bg_index:
+                    new_row[col] = 0
+                else:
+                    # BG 이후 칼럼은 변경하지 않음(빈값으로 남김)
+                    new_row[col] = ""
 
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
 

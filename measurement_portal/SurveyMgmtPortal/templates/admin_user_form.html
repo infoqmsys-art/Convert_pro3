@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}{% if is_new %}계정추가{% else %}계정설정{% endif %} — 계측관리 통합시스템{% endblock %}
+{% block body_class %}page-acct-settings{% endblock %}
+{% block body %}
+<div class="acct-settings-page">
+  {% include "partials/app_header.html" %}
+
+  <div class="acct-settings-workspace">
+    {% include "partials/app_flash.html" %}
+
+    <div class="acct-settings-card" role="main">
+      <div class="acct-settings-split">
+        {# ── 좌: 계정 목록 (캡처와 동일한 좌측 란) ── #}
+        <aside class="acct-settings-rail" aria-label="계정 목록">
+          <h1 class="acct-settings-rail-title">계정설정</h1>
+          <a href="{{ url_for('legacy.admin_user_new') }}"
+             class="acct-settings-add {% if is_new %}is-active{% endif %}">계정추가</a>
+          <div class="acct-settings-rail-scroll">
+            <ul class="acct-settings-userlist">
+              {% for u in all_users %}
+              <li>
+                <a href="{{ url_for('legacy.admin_user_edit', user_id=u.id) }}"
+                   class="acct-settings-user {% if not is_new and selected_user_id == u.id %}is-active{% endif %}">{{ u.username }}</a>
+              </li>
+              {% else %}
+              <li class="acct-settings-userlist-empty">등록된 계정이 없습니다.</li>
+              {% endfor %}
+            </ul>
+          </div>
+        </aside>
+
+        {# ── 우: 중앙(아이디·비번·레벨·메모) + 오른쪽(현장) ── #}
+        <div class="acct-settings-panel">
+          <form method="post" class="acct-settings-form-grid" id="acct-form" autocomplete="off">
+            <input type="hidden" name="display_name" value="{{ (user_row.display_name if user_row else '') or '' }}">
+
+            <div class="acct-settings-fields">
+              <p class="acct-settings-updated">
+                수정 일자:
+                {% if user_row and user_row.updated_at %}
+                {{ user_row.updated_at[:19]|replace('T', ' ') }}
+                {% else %}—{% endif %}
+              </p>
+
+              {% if is_new %}
+              <label class="admin-field">
+                <span class="admin-field-label">아이디</span>
+                <input type="text" name="username" required class="admin-input acct-input-wide">
+              </label>
+              <label class="admin-field">
+                <span class="admin-field-label">비밀번호</span>
+                <input type="password" name="password" required class="admin-input acct-input-wide" autocomplete="new-password">
+              </label>
+              {% else %}
+              <label class="admin-field">
+                <span class="admin-field-label">아이디</span>
+                <input type="text" class="admin-input acct-input-wide" value="{{ user_row.username }}" readonly>
+              </label>
+              <label class="admin-field">
+                <span class="admin-field-label">비밀번호</span>
+                <input type="password" name="password" class="admin-input acct-input-wide" autocomplete="new-password" placeholder="변경 시에만 입력">
+              </label>
+              {% endif %}
+
+              <label class="admin-field">
+                <span class="admin-field-label">레벨</span>
+                {% set lv = user_row.access_level if user_row else none %}
+                <select name="access_level" class="admin-select acct-input-wide" {% if is_new %}required{% endif %}>
+                  {% if is_new %}
+                  <option value="" selected disabled>—</option>
+                  {% endif %}
+                  <option value="1" {% if not is_new and lv == 1 %}selected{% endif %}>Level 1</option>
+                  <option value="3" {% if not is_new and lv == 3 %}selected{% endif %}>Level 3</option>
+                  <option value="4" {% if not is_new and lv == 4 %}selected{% endif %}>Level 4</option>
+                </select>
+              </label>
+              <ul class="admin-level-hint acct-level-hint">
+                <li><strong>레벨1</strong> : 관리자 (모든 권한)</li>
+                <li><strong>레벨3</strong> : 계측자 (수동 계측 입력 권한)</li>
+                <li><strong>레벨4</strong> : 게스트</li>
+              </ul>
+
+              {% if not is_new %}
+              <label class="admin-field admin-field-inline">
+                <input type="checkbox" name="is_active" value="1" {% if user_row.is_active %}checked{% endif %}>
+                <span>계정 활성</span>
+              </label>
+              {% endif %}
+
+              <label class="admin-field acct-memo-field">
+                <span class="admin-field-label">메모</span>
+                <textarea name="memo" rows="8" class="admin-textarea acct-memo">{{ user_row.memo if user_row else '' }}</textarea>
+              </label>
+            </div>
+
+            <div class="acct-settings-sites" aria-label="현장 권한">
+              <label class="admin-field admin-field-inline acct-sites-all">
+                <input type="checkbox" id="chk-all-sites">
+                <span class="acct-sites-all-label">전체선택</span>
+              </label>
+              <div class="acct-sites-list">
+                {% for s in all_sites %}
+                <label class="admin-field admin-field-inline acct-site-line">
+                  <input type="checkbox" name="site_ids" value="{{ s.id }}" class="site-chk"
+                    {% if s.id in site_ids %}checked{% endif %}>
+                  <span class="acct-site-label" title="{{ s.org_name }} · {{ s.name }}">{{ s.name }}</span>
+                </label>
+                {% else %}
+                <p class="acct-sites-empty">등록된 현장이 없습니다.</p>
+                {% endfor %}
+              </div>
+              <p class="acct-sites-note">레벨 1 은 전체 현장 접근 · 아래 선택은 레벨 3·4 에만 적용됩니다.</p>
+            </div>
+          </form>
+
+          <div class="acct-settings-actions">
+            {% if not is_new %}
+            <button type="submit" form="acct-form" name="action" value="delete" class="btn-acct-del"
+                    onclick="return confirm('이 계정을 삭제할까요?');">계정삭제</button>
+            {% endif %}
+            <button type="submit" form="acct-form" class="btn-acct-save">저장</button>
+          </div>
+        </div>
+      </div>
+
+      <footer class="acct-settings-foot">
+        <span class="acct-settings-foot-user">{{ username }} ({{ client_ip }})</span>
+        <a class="acct-settings-foot-out" href="{{ url_for('logout') }}">Logout</a>
+      </footer>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const all = document.getElementById('chk-all-sites');
+  if (!all) return;
+  const boxes = document.querySelectorAll('.site-chk');
+  all.addEventListener('change', function () {
+    boxes.forEach(function (b) { b.checked = all.checked; });
+  });
+  function syncAllIndeterminate() {
+    const n = boxes.length;
+    const c = Array.prototype.filter.call(boxes, function (b) { return b.checked; }).length;
+    all.checked = n > 0 && c === n;
+    all.indeterminate = c > 0 && c < n;
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', syncAllIndeterminate); });
+  syncAllIndeterminate();
+})();
+</script>
+{% endblock %}

@@ -179,3 +179,39 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# ───────────────────────────────────────────────
+#  큐엠 자동화 관리 프로그램 — 로컬 전용 파일
+# ───────────────────────────────────────────────
+
+# 운영 설정 / 인증 (민감 정보 포함 — 절대 커밋 금지)
+config.json
+web_auth.json
+management.json
+qm_remote.json
+qm_remote_state.sqlite3
+web_shortcuts.json
+unregistered_files.json
+
+# 런타임 생성 파일
+monitoring_cache.json
+runtime_memory.json
+logs/
+*.lock
+
+# 백업 파일
+*.backup_*
+config.json.tmp
+management.json.tmp
+
+# 계측관리 통합시스템 — measurement_portal/SurveyMgmtPortal 로컬 SQLite·비밀
+measurement_portal/SurveyMgmtPortal/data/
+measurement_portal/SurveyMgmtPortal/portal.db
+measurement_portal/SurveyMgmtPortal/secrets.local.txt
+
+# Postgres docker-compose 로컬 비밀번호 오버라이드
+measurement_portal/database/.env
+
+# 별도 git 저장소/실험 폴더 (중첩 clone 제외)
+File_converter/
+QMremote/

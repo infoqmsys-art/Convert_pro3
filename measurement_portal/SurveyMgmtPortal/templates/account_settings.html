@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}계정 설정{% endblock %}
+{% block body_class %}page-app{% endblock %}
+{% block body %}
+{% include "partials/app_header.html" %}
+<div class="app-layout">
+  {% include "partials/app_sidebar.html" %}
+  <main class="app-main">
+    {% include "partials/app_flash.html" %}
+    <section class="hero-strip hero-strip-compact">
+      <h2>내 계정</h2>
+      <p>비밀번호 변경·다른 사용자 관리는 <strong>레벨 1 관리자</strong>에게 요청하세요.</p>
+    </section>
+    <section class="panel form-panel">
+      <table class="data-table">
+        <tbody>
+          <tr><th>아이디</th><td><strong>{{ user_row.username }}</strong></td></tr>
+          <tr><th>표시명</th><td>{{ user_row.display_name or '—' }}</td></tr>
+          <tr><th>접근 레벨</th><td>
+            {% if user_row.access_level == 1 %}1 — 최고관리자
+            {% elif user_row.access_level == 3 %}3 — 계측자
+            {% else %}4 — 게스트{% endif %}
+          </td></tr>
+          <tr><th>역할(DB)</th><td>{{ user_row.role }}</td></tr>
+          <tr><th>메모</th><td class="cell-muted">{{ user_row.memo or '—' }}</td></tr>
+        </tbody>
+      </table>
+      <p class="form-hint" style="margin-top:16px">관리자 화면이 필요하면 관리자 계정으로 로그인하세요.</p>
+    </section>
+  </main>
+</div>
+{% endblock %}

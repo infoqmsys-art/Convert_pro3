@@ -1,0 +1,36 @@
+survey:
+  portal:
+    # Python 포털 루트 — 형제 폴더 SurveyMgmtPortal (repo: measurement_portal/SurveyMgmtPortal)
+    home: ${SURVEY_PORTAL_HOME:${user.dir}/../SurveyMgmtPortal}
+  site-main-width: 934
+  site-main-height: 760
+
+server:
+  port: ${SURVEY_PORTAL_JAVA_PORT:8082}
+
+spring:
+  application:
+    name: survey-mgmt-portal-java
+  datasource:
+    url: jdbc:sqlite:file:${survey.portal.home}/data/survey_portal.sqlite3
+    driver-class-name: org.sqlite.JDBC
+  jpa:
+    database-platform: org.hibernate.community.dialect.SQLiteDialect
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    show-sql: false
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:sql/append-sms-tables.sql
+  servlet:
+    multipart:
+      max-file-size: 16MB
+      max-request-size: 20MB
+  thymeleaf:
+    cache: false
+
+logging:
+  level:
+    org.hibernate.SQL: WARN

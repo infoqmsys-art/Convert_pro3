@@ -1,0 +1,5 @@
+{
+  "username": "admin",
+  "password": "changeme",
+  "secret_key": "여기에-랜덤-64자-16진수-문자열-입력-또는-빈칸으로-두면-자동생성"
+}

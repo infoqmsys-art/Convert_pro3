@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}{{ site.name }} — 현장설정{% endblock %}
+{% block body_class %}page-app page-site-settings{% endblock %}
+{% block body %}
+{% include "partials/app_header.html" %}
+<div class="app-layout ss-layout">
+  <main class="app-main ss-main">
+    {% include "partials/app_flash.html" %}
+
+    <div class="sss-shell">
+      <header class="sss-page-head">
+        <h1 class="sss-page-title">{{ site.name }}</h1>
+        <p class="sss-page-sub">{{ site.org_name }} · 현장설정</p>
+      </header>
+
+      {% if not can_edit %}
+      <p class="flash flash-error ss-readonly-banner" role="alert">조회 전용 계정입니다. 수정은 관리자·계측자만 가능합니다.</p>
+      {% endif %}
+
+      <div class="sss-grid" id="site-settings-grid">
+        {# 좌상: 현장정보 #}
+        <article class="sss-card" aria-labelledby="sss-h-site">
+          <header class="sss-card-head">
+            <span class="sss-card-mark" aria-hidden="true"></span>
+            <h2 id="sss-h-site" class="sss-card-title">현장정보</h2>
+          </header>
+          <form method="post" action="{{ url_for('site_workspace_site_settings', site_id=site.id) }}" enctype="multipart/form-data" class="sss-card-form">
+            <input type="hidden" name="_action" value="save_site"/>
+            <div class="sss-field">
+              <label class="sss-label" for="site_name">현장명</label>
+              <input id="site_name" class="sss-input" type="text" name="site_name" value="{{ site.name }}" required maxlength="200" autocomplete="organization" {% if not can_edit %}readonly{% endif %}>
+            </div>
+            <div class="sss-field">
+              <label class="sss-label" for="site_code">영문 코드</label>
+              <input id="site_code" class="sss-input" type="text" name="site_code" value="{{ site.site_code or '' }}" maxlength="64" autocapitalize="off" autocomplete="off" placeholder="예: jamwon_line3" {% if not can_edit %}readonly{% endif %}>
+            </div>
+            <div class="sss-field">
+              <label class="sss-label" for="install_date">설치일</label>
+              <input id="install_date" class="sss-input" type="date" name="install_date" value="{{ (site.install_date or '')[:10] }}" {% if not can_edit %}readonly{% endif %}>
+            </div>
+            <div class="sss-field">
+              <label class="sss-label" for="address">주소</label>
+              <input id="address" class="sss-input" type="text" name="address" value="{{ site.address or '' }}" maxlength="500" {% if not can_edit %}readonly{% endif %}>
+            </div>
+            <div class="sss-field">
+              <label class="sss-label" for="site_program">계측 프로그램</label>
+              <input id="site_program" class="sss-input" type="text" name="site_program" value="{{ site.site_program or '' }}" maxlength="200" {% if not can_edit %}readonly{% endif %}>
+            </div>
+            <div class="sss-field">
+              <label class="sss-label" for="memo">메모</label>
+              <textarea id="memo" class="sss-textarea" name="memo" rows="2" maxlength="2000" {% if not can_edit %}readonly{% endif %}>{{ site.memo or '' }}</textarea>
+            </div>
+
+            <div class="sss-preview-row">
+              <div class="sss-preview-item">
+                <span class="muted">메인 ({{ site_main_px_w }}×{{ site_main_px_h }})</span>
+                {% if site.image_main %}
+                <a href="{{ url_for('site_media_file', rel=site.image_main) }}" target="_blank" rel="noopener" class="link-accent">보기 ↗</a>
+                {% else %}<span class="muted">없음</span>{% endif %}
+              </div>
+              <div class="sss-preview-item">
+                <span class="muted">리스트</span>
+                {% if site.image_list %}
+                <a href="{{ url_for('site_media_file', rel=site.image_list) }}" target="_blank" rel="noopener" class="link-accent">보기 ↗</a>
+                {% else %}<span class="muted">없음</span>{% endif %}
+              </div>
+            </div>
+            {% if can_edit %}
+            <div class="sss-field">
+              <label class="sss-label" for="image_main">메인 이미지 변경</label>
+              <input id="image_main" class="sss-file" type="file" name="image_main" accept="image/jpeg,image/png,image/webp">
+            </div>
+            <div class="sss-field">
+              <label class="sss-label" for="image_list">리스트 이미지 변경</label>
+              <input id="image_list" class="sss-file" type="file" name="image_list" accept="image/jpeg,image/png,image/webp">
+            </div>
+            {% endif %}
+            <p class="form-hint sss-img-hint">메인 이미지는 업로드 시 {{ site_main_px_w }}×{{ site_main_px_h }} 픽셀을 검사합니다.</p>
+            {% if can_edit %}
+            <div class="sss-card-actions">
+              <button type="submit" class="btn-primary">현장정보저장</button>
+            </div>
+            {% endif %}
+          </form>
+        </article>
+
+        {# 우상: 발송 대상자 #}
+        <article class="sss-card" aria-labelledby="sss-h-rcpt">
+          <header class="sss-card-head">
+            <span class="sss-card-mark" aria-hidden="true"></span>
+            <h2 id="sss-h-rcpt" class="sss-card-title">발송 대상자 관리</h2>
+          </header>
+          <form method="post" action="{{ url_for('site_workspace_site_settings', site_id=site.id) }}" class="sss-card-form">
+            <input type="hidden" name="_action" value="save_recipient"/>
+            {% if editing_recipient %}
+            <input type="hidden" name="recipient_id" value="{{ editing_recipient.id }}"/>
+            {% endif %}
+            <div class="sss-send-row">
+              <label class="sss-check"><input type="checkbox" name="recipient_send" value="1" {% if not editing_recipient or editing_recipient.send_enabled %}checked{% endif %} {% if not can_edit %}disabled{% endif %}> 발송여부</label>
+            </div>
+            <div class="sss-field-grid">
+              <div class="sss-field">
+                <label class="sss-label" for="recipient_name">이름</label>
+                <input id="recipient_name" class="sss-input" type="text" name="recipient_name" value="{{ editing_recipient.name if editing_recipient else '' }}" {% if not can_edit %}readonly{% endif %}>
+              </div>
+              <div class="sss-field">
+                <label class="sss-label" for="recipient_phone">전화번호</label>
+                <input id="recipient_phone" class="sss-input" type="text" name="recipient_phone" value="{{ editing_recipient.phone if editing_recipient else '' }}" {% if not can_edit %}readonly{% endif %}>
+              </div>
+              <div class="sss-field">
+                <label class="sss-label" for="recipient_job">직위</label>
+                <input id="recipient_job" class="sss-input" type="text" name="recipient_job" value="{{ editing_recipient.job_title if editing_recipient else '' }}" {% if not can_edit %}readonly{% endif %}>
+              </div>
+              <div class="sss-field">
+                <label class="sss-label" for="recipient_dept">부서</label>
+                <input id="recipient_dept" class="sss-input" type="text" name="recipient_dept" value="{{ editing_recipient.department if editing_recipient else '' }}" {% if not can_edit %}readonly{% endif %}>
+              </div>
+            </div>
+            <div class="sss-field">
+              <label class="sss-label" for="recipient_info">정보</label>
+              <textarea id="recipient_info" class="sss-textarea" name="recipient_info" rows="2" {% if not can_edit %}readonly{% endif %}>{{ editing_recipient.info if editing_recipient else '' }}</textarea>
+            </div>
+            {% if can_edit %}
+            <div class="sss-card-actions">
+              {% if editing_recipient %}
+              <a href="{{ url_for('site_workspace_site_settings', site_id=site.id) }}" class="btn-ghost btn-sm">취소</a>
+              {% endif %}
+              <button type="submit" class="btn-primary">저장</button>
+            </div>
+            {% endif %}
+          </form>
+        </article>
+
+        {# 좌하: SMS #}
+        <article class="sss-card" aria-labelledby="sss-h-sms">
+          <header class="sss-card-head">
+            <span class="sss-card-mark sms" aria-hidden="true"></span>
+            <h2 id="sss-h-sms" class="sss-card-title">SMS설정</h2>
+          </header>
+          <form method="post" action="{{ url_for('site_workspace_site_settings', site_id=site.id) }}" class="sss-card-form">
+            <input type="hidden" name="_action" value="save_sms"/>
+            <div class="sss-field">
+              <label class="sss-check"><input type="checkbox" name="sms_enabled" value="1" {% if sms.enabled %}checked{% endif %} {% if not can_edit %}disabled{% endif %}> 사용여부</label>
+            </div>
+            <div class="sss-field">
+              <label class="sss-label" for="sms_message">메시지</label>
+              <textarea id="sms_message" class="sss-textarea" name="sms_message" rows="3" {% if not can_edit %}readonly{% endif %}>{{ sms.message_template or '' }}</textarea>
+            </div>
+            <div class="sss-time-row">
+              <div class="sss-field">
+                <label class="sss-label" for="sms_time_from">발송 시작</label>
+                <input id="sms_time_from" class="sss-input" type="time" step="1" name="sms_time_from" value="{{ (sms.time_from or '00:00:00')[:8] }}" {% if not can_edit %}readonly{% endif %}>
+              </div>
+              <span class="sss-tilde" aria-hidden="true">~</span>
+              <div class="sss-field">
+                <label class="sss-label" for="sms_time_to">발송 종료</label>
+                <input id="sms_time_to" class="sss-input" type="time" step="1" name="sms_time_to" value="{{ (sms.time_to or '23:59:59')[:8] }}" {% if not can_edit %}readonly{% endif %}>
+              </div>
+            </div>
+            {% if can_edit %}
+            <div class="sss-card-actions">
+              <button type="submit" class="btn-primary">SMS설정저장</button>
+            </div>
+            {% endif %}
+          </form>
+        </article>
+
+        {# 우하: 명단 #}
+        <article class="sss-card sss-card-table" aria-labelledby="sss-h-list">
+          <header class="sss-card-head">
+            <span class="sss-card-mark list" aria-hidden="true"></span>
+            <h2 id="sss-h-list" class="sss-card-title">발송대상자명단</h2>
+          </header>
+          <div class="sss-table-wrap">
+            <table class="sss-table">
+              <thead>
+                <tr>
+                  <th>이름</th>
+                  <th>전화번호</th>
+                  <th>발송여부</th>
+                  {% if can_edit %}<th class="sss-th-actions"></th>{% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in sms_recipients %}
+                <tr>
+                  <td>{{ r.name }}</td>
+                  <td>{{ r.phone }}</td>
+                  <td>{% if r.send_enabled %}예{% else %}아니오{% endif %}</td>
+                  {% if can_edit %}
+                  <td class="sss-td-actions">
+                    <a href="{{ url_for('site_workspace_site_settings', site_id=site.id, edit=r.id) }}" class="btn-ghost btn-sm">수정</a>
+                    <form method="post" action="{{ url_for('site_workspace_site_settings', site_id=site.id) }}" class="sss-inline-form" onsubmit="return confirm('삭제할까요?');">
+                      <input type="hidden" name="_action" value="delete_recipient"/>
+                      <input type="hidden" name="delete_recipient_id" value="{{ r.id }}"/>
+                      <button type="submit" class="btn-ghost btn-sm sss-btn-del">삭제</button>
+                    </form>
+                  </td>
+                  {% endif %}
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="{% if can_edit %}4{% else %}3{% endif %}" class="sss-empty">등록된 수신자가 없습니다.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}

@@ -1,0 +1,108 @@
+{# Requires: portal_deploy_poll_interval_sec, portal_deploy_marker_ms — see inject_portal_deploy_ui #}
+<div id="portal-deploy-strip" class="portal-deploy-strip" hidden role="status" aria-live="polite">
+  <span class="portal-deploy-strip-text">서버 쪽 코드/버전이 바뀐 것으로 보입니다. 반영하려면 브라우저를 새로고침 하세요 (필요 시 CMD에서 서버도 재시작).</span>
+  <button type="button" class="portal-deploy-strip-btn" id="portal-deploy-strip-reload">새로고침</button>
+  <button type="button" class="portal-deploy-strip-dismiss" id="portal-deploy-strip-dismiss" aria-label="닫기">×</button>
+</div>
+
+<div class="portal-deploy-dock" id="portal-deploy-dock" title="배포·수정 반영 도움말">
+  <span class="portal-deploy-dock-label">UI</span>
+  <button type="button" class="portal-deploy-dock-btn" id="portal-deploy-check">지금 확인</button>
+  <button type="button" class="portal-deploy-dock-btn portal-deploy-dock-primary" id="portal-deploy-reload">이 페이지 새로고침</button>
+</div>
+
+<script>
+(function () {
+  var pingUrl = {{ url_for('portal_ping')|tojson }};
+  var pollSec = {{ portal_deploy_poll_interval_sec|tojson }};
+  var initialMs = {{ portal_deploy_marker_ms|int }};
+  var strip = document.getElementById("portal-deploy-strip");
+  var stripReload = document.getElementById("portal-deploy-strip-reload");
+  var stripDismiss = document.getElementById("portal-deploy-strip-dismiss");
+  var btnCheck = document.getElementById("portal-deploy-check");
+  var btnReload = document.getElementById("portal-deploy-reload");
+  var key = "survey_portal_build_mtime_ms";
+
+  function readStored() {
+    try {
+      var s = sessionStorage.getItem(key);
+      if (s === null || s === "") return initialMs;
+      var n = parseInt(s, 10);
+      return isNaN(n) ? initialMs : n;
+    } catch (e) {
+      return initialMs;
+    }
+  }
+
+  function writeStored(ms) {
+    try {
+      sessionStorage.setItem(key, String(ms));
+    } catch (e) {}
+  }
+
+  writeStored(readStored());
+
+  function showStrip(show) {
+    if (!strip) return;
+    if (show) strip.removeAttribute("hidden");
+    else strip.setAttribute("hidden", "");
+  }
+
+  function ping() {
+    return fetch(pingUrl, { credentials: "same-origin", headers: { "Accept": "application/json" } })
+      .then(function (r) { return r.json(); });
+  }
+
+  function compareApply(data) {
+    if (!data || typeof data.build_mtime_ms !== "number") return;
+    var cur = readStored();
+    if (data.build_mtime_ms !== cur) {
+      showStrip(true);
+    }
+  }
+
+  stripReload.addEventListener("click", function () {
+    window.location.reload();
+  });
+  stripDismiss.addEventListener("click", function () {
+    ping().then(function (data) {
+      if (data && typeof data.build_mtime_ms === "number") writeStored(data.build_mtime_ms);
+      showStrip(false);
+    }).catch(function () { showStrip(false); });
+  });
+
+  btnReload.addEventListener("click", function () {
+    window.location.reload();
+  });
+
+  btnCheck.addEventListener("click", function () {
+    ping().then(function (data) {
+      if (!data || typeof data.build_mtime_ms !== "number") {
+        alert("응답이 올바르지 않습니다.");
+        return;
+      }
+      var cur = readStored();
+      if (data.build_mtime_ms !== cur) {
+        compareApply(data);
+        return;
+      }
+      var lbl = data.portal_version_label || "";
+      alert(
+        lbl
+          ? "변경 없음 또는 이미 알려진 상태입니다. 표시 버전: " +
+              lbl +
+              " — 여전히 옛 데이터면 «이 페이지 새로고침»을 사용하세요."
+          : "확인했습니다."
+      );
+    }).catch(function () {
+      alert("확인 요청에 실패했습니다.");
+    });
+  });
+
+  if (pollSec !== null && typeof pollSec === "number" && pollSec >= 3) {
+    setInterval(function () {
+      ping().then(compareApply).catch(function () {});
+    }, pollSec * 1000);
+  }
+})();
+</script>

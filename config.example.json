@@ -1,0 +1,38 @@
+{
+    "__version__": 2,
+    "업체명_예시": {
+        "현장명_예시": {
+            "__note__": "현장 메모 (선택)",
+            "폴더명_예시": {
+                "__note__": "",
+                "__absolute_path__": "C:/data/폴더명_예시/폴더명_예시",
+                "__is_ghost__": false,
+                "1234567890.csv": {
+                    "__order__": 1,
+                    "__fill_interval__": 0,
+                    "__gen_interval__": 0,
+                    "__is_ghost__": false,
+                    "CH0": {
+                        "offset": "PASS",
+                        "base": "",
+                        "scale": "",
+                        "decimal": "",
+                        "label": "",
+                        "initial": ""
+                    },
+                    "CH1": {
+                        "offset": "0",
+                        "base": "0",
+                        "scale": "1.0",
+                        "decimal": "2",
+                        "label": "센서 레이블",
+                        "initial": ""
+                    }
+                }
+            }
+        }
+    },
+    "__scheduler__": {
+        "auto_convert_minutes": [5, 25, 45]
+    }
+}

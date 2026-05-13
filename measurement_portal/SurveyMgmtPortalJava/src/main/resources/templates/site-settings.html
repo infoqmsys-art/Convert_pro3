@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>현장설정 · 계측관리</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2230;
+      --border: #2a3544;
+      --text: #e8edf5;
+      --muted: #8b97a8;
+      --accent: #3d8bfd;
+      --accent-dim: #2563cf;
+      --danger: #f87171;
+      --radius: 12px;
+      --font: "DM Sans", "Malgun Gothic", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font);
+      background: radial-gradient(1200px 800px at 10% -20%, #1e2d44 0%, var(--bg) 55%);
+      color: var(--text);
+    }
+    .shell { max-width: 1280px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    header {
+      display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; justify-content: space-between;
+      margin-bottom: 1.25rem;
+    }
+    header h1 { font-size: 1.125rem; font-weight: 600; margin: 0; letter-spacing: -0.02em; }
+    header .sub { color: var(--muted); font-size: .85rem; }
+    nav { display: flex; gap: .5rem; flex-wrap: wrap; }
+    nav a {
+      color: var(--muted); text-decoration: none; font-size: .8rem;
+      padding: .35rem .65rem; border-radius: 8px; border: 1px solid var(--border);
+    }
+    nav a:hover { color: var(--text); border-color: var(--accent); }
+    .flash { padding: .65rem 1rem; border-radius: var(--radius); margin-bottom: 1rem; font-size: .88rem; }
+    .flash.ok { background: rgba(61, 139, 253, .12); border: 1px solid rgba(61, 139, 253, .35); }
+    .flash.err { background: rgba(248, 113, 113, .1); border: 1px solid rgba(248, 113, 113, .35); }
+    .grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 900px) {
+      .grid { grid-template-columns: 1fr 1fr; grid-template-rows: auto auto; }
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.35rem;
+    }
+    .panel h2 {
+      margin: 0 0 1rem;
+      font-size: .92rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    label { display: block; font-size: .78rem; color: var(--muted); margin-bottom: .25rem; }
+    input[type=text], input[type=date], input[type=time], textarea {
+      width: 100%; padding: .5rem .65rem;
+      border-radius: 8px; border: 1px solid var(--border);
+      background: #121922; color: var(--text); font-family: inherit; font-size: .88rem;
+    }
+    input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    textarea { min-height: 72px; resize: vertical; }
+    .row { margin-bottom: .75rem; }
+    .row-inline { display: flex; gap: .75rem; flex-wrap: wrap; align-items: flex-end; }
+    .row-inline .row { flex: 1; min-width: 120px; margin-bottom: 0; }
+    .hint { font-size: .72rem; color: var(--muted); margin-top: .25rem; }
+    .actions { display: flex; justify-content: flex-end; margin-top: 1rem; }
+    button, .btn {
+      font-family: inherit; cursor: pointer;
+      border: none; border-radius: 8px; padding: .5rem 1rem;
+      font-size: .85rem; font-weight: 600;
+    }
+    .btn-primary { background: linear-gradient(180deg, var(--accent) 0%, var(--accent-dim) 100%); color: white; }
+    .btn-primary:hover { filter: brightness(1.06); }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { color: var(--text); }
+    .btn-danger { background: rgba(248,113,113,.15); color: var(--danger); border: 1px solid rgba(248,113,113,.35); }
+    input[type=file] { font-size: .78rem; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+    th, td { padding: .5rem .4rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: .75rem; }
+    .muted { color: var(--muted); }
+    input[type=checkbox] { width: auto; accent-color: var(--accent); }
+    .checks label { display: inline-flex; align-items: center; gap: .4rem; margin-bottom: 0; cursor: pointer; }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div>
+      <div class="sub">계측관리 통합시스템</div>
+      <h1 th:text="${orgName + ' · 현장설정'}">업체 · 현장설정</h1>
+    </div>
+    <nav>
+      <a href="/">홈</a>
+      <a th:href="@{/site/{id}/workspace(id=${site.id})}">워크스페이스</a>
+    </nav>
+  </header>
+
+  <p class="muted" style="font-size:.8rem;margin:0 0 1rem;">Java 이행 단계 페이지 · DB는 Python 포털과 동일한 SQLite를 사용합니다.</p>
+
+  <div th:if="${flashOk}" class="flash ok" th:text="${flashOk}"></div>
+  <div th:if="${flashError}" class="flash err" th:text="${flashError}"></div>
+
+  <div class="grid">
+    <!-- A: 현장정보 -->
+    <section class="panel">
+      <h2>현장정보</h2>
+      <form th:action="@{/site/{id}/site-settings(id=${site.id})}" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="_action" value="save_site"/>
+        <div class="row">
+          <label for="site_name">현장명</label>
+          <input id="site_name" name="site_name" type="text" th:value="${site.name}"/>
+        </div>
+        <div class="row">
+          <label for="site_code">영문 코드 (선택)</label>
+          <input id="site_code" name="site_code" type="text" th:value="${site.siteCode}"/>
+        </div>
+        <div class="row">
+          <label for="install_date">설치일</label>
+          <input id="install_date" name="install_date" type="date"
+                 th:value="${site.installDate}"/>
+        </div>
+        <div class="row">
+          <label for="address">주소</label>
+          <input id="address" name="address" type="text" th:value="${site.address}"/>
+        </div>
+        <div class="row">
+          <label for="site_program">계측 프로그램</label>
+          <input id="site_program" name="site_program" type="text" th:value="${site.siteProgram}"/>
+        </div>
+        <div class="row">
+          <label for="memo">메모</label>
+          <textarea id="memo" name="memo" th:text="${site.memo}"></textarea>
+        </div>
+        <div class="row">
+          <label for="image_main">메인 이미지 변경</label>
+          <input id="image_main" name="image_main" type="file" accept=".jpg,.jpeg,.png,.webp"/>
+          <p class="hint" th:text="'권장 ' + ${siteMainW} + ' × ' + ${siteMainH} + ' px (Python 포털과 동일 검증)'"></p>
+        </div>
+        <div class="row">
+          <label for="image_list">리스트 이미지 변경</label>
+          <input id="image_list" name="image_list" type="file" accept=".jpg,.jpeg,.png,.webp"/>
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn-primary">현장정보저장</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- C: 발송 대상자 -->
+    <section class="panel">
+      <h2>발송 대상자 관리</h2>
+      <form th:action="@{/site/{id}/site-settings(id=${site.id})}" method="post">
+        <input type="hidden" name="_action" value="save_recipient"/>
+        <input type="hidden" name="recipient_id" th:if="${editingRecipient != null}" th:value="${editingRecipient.id}"/>
+        <div class="row checks">
+          <label><input type="checkbox" name="recipient_send" value="true"
+                        th:checked="${editingRecipient == null or editingRecipient.sendEnabled == 1}"/> 발송여부</label>
+        </div>
+        <div class="row">
+          <label for="recipient_name">이름</label>
+          <input id="recipient_name" name="recipient_name" type="text"
+                 th:value="${editingRecipient != null ? editingRecipient.name : ''}"/>
+        </div>
+        <div class="row">
+          <label for="recipient_phone">전화번호</label>
+          <input id="recipient_phone" name="recipient_phone" type="text"
+                 th:value="${editingRecipient != null ? editingRecipient.phone : ''}"/>
+        </div>
+        <div class="row">
+          <label for="recipient_job">직책</label>
+          <input id="recipient_job" name="recipient_job" type="text"
+                 th:value="${editingRecipient != null ? editingRecipient.jobTitle : ''}"/>
+        </div>
+        <div class="row">
+          <label for="recipient_dept">부서</label>
+          <input id="recipient_dept" name="recipient_dept" type="text"
+                 th:value="${editingRecipient != null ? editingRecipient.department : ''}"/>
+        </div>
+        <div class="row">
+          <label for="recipient_info">정보</label>
+          <textarea id="recipient_info" name="recipient_info"
+                    th:text="${editingRecipient != null ? editingRecipient.info : ''}"></textarea>
+        </div>
+        <div class="actions" style="gap:.5rem;">
+          <a th:if="${editingRecipient != null}" th:href="@{/site/{id}/site-settings(id=${site.id})}" class="btn btn-ghost" style="text-decoration:none;display:inline-block;">취소</a>
+          <button type="submit" class="btn-primary">저장</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- B: SMS -->
+    <section class="panel">
+      <h2>SMS 설정</h2>
+      <form th:action="@{/site/{id}/site-settings(id=${site.id})}" method="post">
+        <input type="hidden" name="_action" value="save_sms"/>
+        <div class="row checks">
+          <label><input type="checkbox" name="sms_enabled" value="true" th:checked="${sms.enabled == 1}"/> 사용여부</label>
+        </div>
+        <div class="row">
+          <label for="sms_message">메시지</label>
+          <textarea id="sms_message" name="sms_message" th:text="${sms.messageTemplate}"></textarea>
+        </div>
+        <div class="row-inline">
+          <div class="row">
+            <label for="sms_time_from">발송 시작</label>
+            <input id="sms_time_from" name="sms_time_from" type="time" step="1"
+                   th:value="${sms.timeFrom != null ? #strings.substring(sms.timeFrom,0,8) : '00:00:00'}"/>
+          </div>
+          <div class="row">
+            <label for="sms_time_to">발송 종료</label>
+            <input id="sms_time_to" name="sms_time_to" type="time" step="1"
+                   th:value="${sms.timeTo != null ? #strings.substring(sms.timeTo,0,8) : '23:59:59'}"/>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn-primary">SMS설정저장</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- D: 명단 -->
+    <section class="panel">
+      <h2>발송대상자명단</h2>
+      <table th:if="${!recipients.isEmpty()}">
+        <thead>
+        <tr>
+          <th>이름</th>
+          <th>전화번호</th>
+          <th>발송여부</th>
+          <th></th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="r : ${recipients}">
+          <td th:text="${r.name}"></td>
+          <td th:text="${r.phone}"></td>
+          <td th:text="${r.sendEnabled == 1 ? '예' : '아니오'}"></td>
+          <td style="white-space:nowrap;">
+            <a th:href="@{/site/{id}/site-settings(id=${site.id},edit=${r.id})}" class="btn-ghost btn" style="padding:.25rem .5rem;text-decoration:none;">수정</a>
+            <form th:action="@{/site/{id}/site-settings(id=${site.id})}" method="post" style="display:inline;">
+              <input type="hidden" name="_action" value="delete_recipient"/>
+              <input type="hidden" name="delete_recipient_id" th:value="${r.id}"/>
+              <button type="submit" class="btn-danger" style="padding:.25rem .5rem;">삭제</button>
+            </form>
+          </td>
+        </tr>
+        </tbody>
+      </table>
+      <p th:if="${recipients.isEmpty()}" class="muted">등록된 수신자가 없습니다.</p>
+    </section>
+  </div>
+</div>
+</body>
+</html>

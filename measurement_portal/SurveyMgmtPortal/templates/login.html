@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}계측관리 통합시스템{% endblock %}
+{% block body_class %}page-login-smart{% endblock %}
+{% block body %}
+<div class="smart-login-page">
+  <div class="smart-login-stage" id="smartLoginStage">
+    <div class="smart-login-zoom-tools" aria-hidden="true">
+      <button type="button" class="smart-zbtn" data-zoom="in" title="확대">+</button>
+      <button type="button" class="smart-zbtn" data-zoom="out" title="축소">−</button>
+      <button type="button" class="smart-zbtn" data-zoom="reset" title="원래 크기">⊙</button>
+    </div>
+
+    <p class="smart-login-brand-en">
+      <span class="smart-login-smart">SMART</span><span class="smart-login-monitoring"> monitoring</span>
+    </p>
+
+    <div class="smart-login-center">
+      <div class="smart-login-panel">
+        <h1 class="smart-login-panel-title">계측관리 통합시스템</h1>
+        {% if error %}
+        <div class="smart-login-error" role="alert">{{ error }}</div>
+        {% endif %}
+        <form method="post" class="smart-login-form" autocomplete="username">
+          <div class="smart-field">
+            <span class="smart-field-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </span>
+            <input type="text" name="username" required placeholder="아이디" value="" autocomplete="username" class="smart-input">
+          </div>
+          <div class="smart-field">
+            <span class="smart-field-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </span>
+            <input type="password" name="password" required placeholder="비밀번호" autocomplete="current-password" class="smart-input">
+          </div>
+          <button type="submit" class="smart-login-submit">LOG IN</button>
+        </form>
+      </div>
+
+      <div class="smart-login-art" aria-hidden="true">
+        <svg class="smart-art-svg" viewBox="0 0 200 160" xmlns="http://www.w3.org/2000/svg">
+          <rect x="28" y="22" width="120" height="88" rx="6" fill="#e8f4fc" stroke="#3d7eb8" stroke-width="2"/>
+          <rect x="36" y="32" width="104" height="60" rx="2" fill="#fff" stroke="#bcd8ee"/>
+          <polyline points="44,78 62,58 78,68 96,48 112,62 130,40" fill="none" stroke="#2b7cd3" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="130" cy="40" r="4" fill="#2b7cd3"/>
+          <rect x="68" y="118" width="40" height="8" rx="2" fill="#8aa8c0"/>
+          <rect x="52" y="126" width="72" height="6" rx="2" fill="#a8bdd4"/>
+          <g transform="translate(142, 36)">
+            <path d="M8 4 L14 18 L2 18 Z" fill="#f59e0b" stroke="#d97706" stroke-width="1"/>
+            <text x="8" y="15" text-anchor="middle" font-size="10" fill="#78350f" font-weight="bold">!</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+
+    <h2 class="smart-login-title-ko">스마트 계측관리 통합모니터링 시스템</h2>
+    <p class="smart-login-build" title="배포 확인용">{{ portal_ui_build }}</p>
+  </div>
+</div>
+<script>
+(function () {
+  var stage = document.getElementById('smartLoginStage');
+  if (!stage) return;
+  var scale = 1;
+  var min = 0.85, max = 1.15, step = 0.05;
+  stage.querySelectorAll('.smart-zbtn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var a = btn.getAttribute('data-zoom');
+      if (a === 'in') scale = Math.min(max, scale + step);
+      else if (a === 'out') scale = Math.max(min, scale - step);
+      else scale = 1;
+      stage.style.transform = 'scale(' + scale + ')';
+    });
+  });
+})();
+</script>
+{% endblock %}

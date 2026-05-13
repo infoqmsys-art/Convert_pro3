@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ placeholder_title }} — {{ site.name }}{% endblock %}
+{% block body_class %}page-app{% endblock %}
+{% block body %}
+{% include "partials/app_header.html" %}
+<div class="app-layout sw-placeholder-layout">
+  <main class="app-main sw-placeholder-main">
+    {% include "partials/app_flash.html" %}
+    <section class="panel">
+      <h2>{{ placeholder_title }} <span class="sw-pill">{{ placeholder_title }} 준비중</span></h2>
+      <p class="form-hint">{{ placeholder_lead }}</p>
+      {% if show_logger_links and loggers %}
+      <ul class="sw-placeholder-list">
+        {% for lg in loggers %}
+        <li>
+          <a href="{{ url_for('site_workspace_sensor_settings', site_id=site.id, logger_id=lg.id) }}" class="link-accent">{{ lg.name }}</a>
+          <span class="muted">{{ lg.logger_kind }} · 상태 {{ lg.status or '—' }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% elif show_logger_links %}
+      <p class="form-hint">이 현장에 등록된 로거가 없습니다. <a href="{{ url_for('site_workspace_sensor_settings', site_id=site.id) }}">센서설정</a>에서 로거를 추가해 주세요.</p>
+      {% endif %}
+    </section>
+  </main>
+</div>
+{% endblock %}

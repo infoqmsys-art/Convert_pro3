@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}{{ org.name }} — 현장리스트{% endblock %}
+{% block body_class %}page-site-list-smart{% endblock %}
+{% block body %}
+<div class="site-list-page">
+  <div class="site-list-card">
+    <header class="site-list-topbar">
+      <nav class="site-list-nav" aria-label="주 메뉴">
+        <a href="{{ url_for('organization_list') }}" class="site-list-nav-link">업체리스트</a>
+        <a href="{{ url_for('site_list', org_id=org.id) }}" class="site-list-nav-link site-list-nav-active">현장리스트</a>
+        <a href="{{ account_url }}" class="site-list-nav-link">계정설정</a>
+      </nav>
+      <div class="site-list-topbar-right">
+        <div class="site-list-toolbar" aria-hidden="true">
+          <button type="button" class="site-list-tbtn" title="확대 (미구현)">+</button>
+          <button type="button" class="site-list-tbtn" title="축소 (미구현)">−</button>
+          <button type="button" class="site-list-tbtn" title="새로고침 (미구현)">↻</button>
+          <button type="button" class="site-list-tbtn" title="검색 (미구현)">⌕</button>
+        </div>
+        <div class="site-list-topbar-title-block">
+          <strong class="site-list-system-title">계측관리 통합시스템</strong>
+          <span class="site-list-version" title="웹 portal_version.py (수집 프로그램은 collector_version.py)">{{ portal_version }}</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="site-list-main">
+      {% include "partials/app_flash.html" %}
+      <nav class="site-list-crumb" aria-label="breadcrumb">
+        <a href="{{ url_for('organization_list') }}">업체리스트</a>
+        <span class="site-list-crumb-sep" aria-hidden="true">/</span>
+        <span class="site-list-crumb-current">{{ org.name }}</span>
+      </nav>
+
+      <div class="site-list-heading-row">
+        <h1 class="site-list-title">현장리스트</h1>
+        {% if show_site_add %}
+        <button type="button" id="btn-site-add-open" class="site-list-btn-add">현장추가</button>
+        {% endif %}
+      </div>
+
+      {% if show_site_add %}
+      <dialog id="dlg-site-add" class="site-add-modal" aria-labelledby="dlg-site-add-title">
+        <div class="site-add-modal-inner">
+          <header class="site-add-modal-head">
+            <h2 id="dlg-site-add-title" class="site-add-modal-title">현장추가</h2>
+          </header>
+          <form id="frm-site-add" method="post" enctype="multipart/form-data"
+                action="{{ url_for('site_list', org_id=org.id) }}"
+                class="site-add-modal-form">
+            <input type="hidden" name="organization_id" value="{{ org.id }}">
+            <input type="hidden" name="site_code_verified" id="fld-site-code-verified" value="">
+
+            <div class="site-add-modal-row">
+              <label class="site-add-modal-label"><span class="required">*</span> 현장명</label>
+              <input type="text" name="site_name" class="site-add-modal-input" required maxlength="200" autocomplete="off" placeholder="예: 디지털미디어시티역 승강편의시설">
+            </div>
+
+            <div class="site-add-modal-row">
+              <label class="site-add-modal-label"><span class="required">*</span> 현장 영어명</label>
+              <div class="site-add-modal-eng-row">
+                <input type="text" name="site_code" id="fld-site-code-eng"
+                       class="site-add-modal-input site-add-modal-input-grow" maxlength="64" autocomplete="off"
+                       placeholder="영어소문자, 숫자만 가능"
+                       autocapitalize="off" autocorrect="off" spellcheck="false" required>
+                <button type="button" id="btn-site-code-check" class="site-add-modal-dup-btn">중복확인</button>
+              </div>
+              <p class="site-add-modal-help">로거 추가 시 이 이름 접두가 사용됩니다. 예: 영어명이 <code>mycite</code>이면 로거 이름 <code>mycite_0</code>, <code>mycite_9</code> 형태.</p>
+              <p id="msg-site-code" class="site-add-msg site-add-msg-hide" aria-live="polite"></p>
+            </div>
+
+            <div class="site-add-modal-row">
+              <label class="site-add-modal-label">설치일</label>
+              <input type="date" name="install_date" class="site-add-modal-input site-add-modal-date" value="{{ default_install_date }}">
+            </div>
+
+            <div class="site-add-modal-row">
+              <label class="site-add-modal-label">메인 이미지</label>
+              <input type="file" name="image_main" accept="image/jpeg,image/png,image/webp">
+              <p class="site-add-modal-muted">이미지 크기: {{ site_main_px_w }} × {{ site_main_px_h }} (픽셀). 선택 시 크기 검사합니다.</p>
+            </div>
+
+            <div class="site-add-modal-row">
+              <label class="site-add-modal-label">리스트 이미지</label>
+              <input type="file" name="image_list" accept="image/jpeg,image/png,image/webp">
+            </div>
+
+            <footer class="site-add-modal-foot">
+              <button type="button" id="btn-site-add-cancel" class="site-add-btn-cancel">취소</button>
+              <button type="submit" id="btn-site-add-submit" class="site-add-btn-submit" disabled>확인</button>
+            </footer>
+          </form>
+        </div>
+      </dialog>
+      {% endif %}
+
+      <p class="site-list-count">총 현장수: {{ sites|length }} ({{ org.name }})</p>
+
+      <div class="site-list-scroll">
+        <ul class="site-list-ul">
+          {% for site in sites %}
+          <li class="site-list-item">
+            <a class="site-list-item-main" href="{{ url_for('site_workspace', site_id=site.id) }}">
+              {% if site.image_list %}
+              <span class="site-list-thumb-ring">
+                <img class="site-list-thumb-img" src="{{ url_for('site_media_file', rel=site.image_list) }}" alt="" loading="lazy">
+              </span>
+              {% else %}
+              <div class="site-list-thumb" aria-hidden="true" data-initial="{{ (site.name or '?')[0] }}"></div>
+              {% endif %}
+              <div class="site-list-meta">
+                <strong class="site-list-name">{{ site.name }}</strong>
+                <span class="site-list-date">등록일: {{ (site.created_at or '—')[:10] }}{% if site.install_date %} · 설치: {{ site.install_date[:10] }}{% endif %} · 로거 {{ site.logger_count or 0 }}대 · 코드 {{ site.site_code or '—' }}</span>
+              </div>
+            </a>
+            {% if show_site_add %}
+            <form method="post" action="{{ url_for('site_list', org_id=org.id) }}" class="site-list-del-form"
+                  onsubmit='return confirm({{ ("정말 삭제할까요?\n\n현장 「" ~ site.name ~ "」와 소속 로거·측정 데이터가 모두 삭제됩니다.") | tojson }});'>
+              <input type="hidden" name="_action" value="delete_site"/>
+              <input type="hidden" name="organization_id" value="{{ org.id }}"/>
+              <input type="hidden" name="site_id" value="{{ site.id }}"/>
+              <button type="submit" class="site-list-btn-del">삭제</button>
+            </form>
+            {% endif %}
+          </li>
+          {% else %}
+          <li class="site-list-empty">이 업체에 등록된 현장이 없습니다.{% if show_site_add %} «현장추가»로 등록할 수 있습니다.{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </main>
+
+    <footer class="site-list-footer">
+      <span class="site-list-user">{{ username }} ({{ client_ip }})</span>
+      <a class="site-list-logout" href="{{ url_for('logout') }}">
+        <svg class="site-list-logout-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Logout
+      </a>
+    </footer>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{% if show_site_add %}
+<script>
+(function(){
+  var dlg = document.getElementById("dlg-site-add");
+  var openBtn = document.getElementById("btn-site-add-open");
+  var cancelBtn = document.getElementById("btn-site-add-cancel");
+  var form = document.getElementById("frm-site-add");
+  var eng = document.getElementById("fld-site-code-eng");
+  var verified = document.getElementById("fld-site-code-verified");
+  var dupBtn = document.getElementById("btn-site-code-check");
+  var msg = document.getElementById("msg-site-code");
+  var submitBtn = document.getElementById("btn-site-add-submit");
+  var orgId = {{ org.id|int }};
+  var checkUrl = {{ url_for('api_check_site_code')|tojson }};
+
+  function showMsg(text, isErr) {
+    if (!msg) return;
+    msg.textContent = text || "";
+    msg.classList.toggle("site-add-msg-hide", !text);
+    msg.classList.toggle("site-add-msg-err", !!isErr);
+    msg.classList.toggle("site-add-msg-ok", !isErr && !!text);
+  }
+
+  function syncSubmitState() {
+    if (!submitBtn || !eng || !verified) return;
+    var ok = verified.value === "1";
+    submitBtn.disabled = !ok;
+  }
+
+  function resetVerification() {
+    if (verified) verified.value = "";
+    showMsg("", false);
+    syncSubmitState();
+  }
+
+  if (eng) {
+    eng.addEventListener("input", function() {
+      var v = eng.value.trim().toLowerCase();
+      if (eng.value !== v) eng.value = v;
+      resetVerification();
+    });
+  }
+
+  function openDlg() {
+    if (dlg) {
+      dlg.showModal();
+      resetVerification();
+      if (verified) verified.value = "";
+      if (eng) eng.focus();
+      syncSubmitState();
+    }
+  }
+
+  if (openBtn && dlg) openBtn.addEventListener("click", openDlg);
+
+  if (cancelBtn && dlg) cancelBtn.addEventListener("click", function() {
+    dlg.close();
+    if (form) form.reset();
+    resetVerification();
+    var dv = document.querySelector("#frm-site-add input[name=install_date]");
+    if (dv) dv.value = {{ default_install_date|tojson }};
+  });
+
+  if (dupBtn && eng) dupBtn.addEventListener("click", function() {
+    var code = (eng.value || "").trim();
+    if (!code) {
+      showMsg("현장 영어명을 입력한 뒤 중복확인을 눌러 주세요.", true);
+      return;
+    }
+    showMsg("확인 중…", false);
+    fetch(checkUrl + "?organization_id=" + encodeURIComponent(orgId) + "&site_code=" + encodeURIComponent(code), {
+      credentials: "same-origin",
+      headers: { "Accept": "application/json" }
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (!data || !data.ok) {
+        showMsg("확인 요청에 실패했습니다.", true);
+        return;
+      }
+      if (data.available) {
+        if (verified) verified.value = "1";
+        showMsg("사용 가능한 영어명입니다.", false);
+      } else {
+        if (verified) verified.value = "";
+        showMsg(data.message || "이미 사용 중이거나 형식이 맞지 않습니다.", true);
+      }
+      syncSubmitState();
+    }).catch(function() {
+      showMsg("네트워크 오류입니다.", true);
+    });
+  });
+
+  if (form) form.addEventListener("submit", function(ev) {
+    if (verified && verified.value !== "1") {
+      ev.preventDefault();
+      showMsg("중복확인이 필요합니다.", true);
+    }
+  });
+
+  syncSubmitState();
+})();
+</script>
+{% endif %}
+{% endblock %}

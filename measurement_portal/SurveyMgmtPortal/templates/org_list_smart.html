@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}업체리스트 — 계측관리 통합시스템{% endblock %}
+{% block body_class %}page-site-list-smart{% endblock %}
+{% block body %}
+<div class="site-list-page">
+  <div class="site-list-card">
+    <header class="site-list-topbar">
+      <nav class="site-list-nav" aria-label="주 메뉴">
+        <a href="{{ url_for('organization_list') }}" class="site-list-nav-link site-list-nav-active">업체리스트</a>
+        <a href="{{ account_url }}" class="site-list-nav-link">계정설정</a>
+      </nav>
+      <div class="site-list-topbar-right">
+        <div class="site-list-toolbar" aria-hidden="true">
+          <button type="button" class="site-list-tbtn" title="확대 (미구현)">+</button>
+          <button type="button" class="site-list-tbtn" title="축소 (미구현)">−</button>
+          <button type="button" class="site-list-tbtn" title="새로고침 (미구현)">↻</button>
+          <button type="button" class="site-list-tbtn" title="검색 (미구현)">⌕</button>
+        </div>
+        <div class="site-list-topbar-title-block">
+          <strong class="site-list-system-title">계측관리 통합시스템</strong>
+          <span class="site-list-version" title="웹 portal_version.py (수집 프로그램은 collector_version.py)">{{ portal_version }}</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="site-list-main">
+      {% include "partials/app_flash.html" %}
+      <div class="site-list-heading-row">
+        <h1 class="site-list-title">업체리스트</h1>
+        {% if show_org_add %}
+        <button type="button" id="btn-org-add-toggle" class="site-list-btn-add" aria-expanded="false" aria-controls="org-add-panel">업체추가</button>
+        {% endif %}
+      </div>
+      {% if show_org_add %}
+      <div id="org-add-panel" class="site-list-add-panel" hidden>
+        <form method="post" action="{{ url_for('organization_list') }}" class="site-list-inline-form">
+          <label class="site-list-ifield">
+            <span>업체명 <abbr title="필수">*</abbr></span>
+            <input type="text" name="org_name" required maxlength="200" autocomplete="organization" placeholder="예: ○○건설">
+          </label>
+          <label class="site-list-ifield">
+            <span>코드</span>
+            <input type="text" name="org_code" maxlength="64" autocomplete="off" placeholder="선택">
+          </label>
+          <label class="site-list-ifield site-list-ifield-wide">
+            <span>메모</span>
+            <input type="text" name="org_memo" maxlength="500" placeholder="선택">
+          </label>
+          <button type="submit" class="site-list-btn-submit">등록</button>
+        </form>
+      </div>
+      {% endif %}
+      <p class="site-list-count">총 업체수: {{ orgs|length }}</p>
+
+      <div class="site-list-scroll">
+        <ul class="site-list-ul">
+          {% for o in orgs %}
+          <li class="site-list-item">
+            <a class="site-list-item-main" href="{{ url_for('site_list', org_id=o.id) }}">
+              <div class="site-list-thumb" aria-hidden="true" data-initial="{{ (o.name or '?')[0] }}"></div>
+              <div class="site-list-meta">
+                <strong class="site-list-name">{{ o.name }}</strong>
+                <span class="site-list-date">접근 가능 현장: {{ o.site_count or 0 }}곳</span>
+              </div>
+            </a>
+            {% if show_org_add %}
+            <form method="post" action="{{ url_for('organization_list') }}" class="site-list-del-form"
+                  onsubmit='return confirm({{ ("정말 삭제할까요?\n\n업체 「" ~ o.name ~ "」와 소속 현장·로거·측정 데이터가 모두 삭제됩니다.") | tojson }});'>
+              <input type="hidden" name="_action" value="delete_organization"/>
+              <input type="hidden" name="organization_id" value="{{ o.id }}"/>
+              <button type="submit" class="site-list-btn-del">삭제</button>
+            </form>
+            {% endif %}
+          </li>
+          {% else %}
+          <li class="site-list-empty">표시할 업체가 없습니다.{% if show_org_add %} 관리자는 «업체추가»로 등록할 수 있습니다.{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </main>
+
+    <footer class="site-list-footer">
+      <span class="site-list-user">{{ username }} ({{ client_ip }})</span>
+      <a class="site-list-logout" href="{{ url_for('logout') }}">
+        <svg class="site-list-logout-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Logout
+      </a>
+    </footer>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{% if show_org_add %}
+<script>
+(function(){
+  var b = document.getElementById("btn-org-add-toggle");
+  var p = document.getElementById("org-add-panel");
+  if(b && p) b.addEventListener("click", function(){
+    var open = p.hasAttribute("hidden");
+    if(open){ p.removeAttribute("hidden"); b.setAttribute("aria-expanded","true"); }
+    else { p.setAttribute("hidden",""); b.setAttribute("aria-expanded","false"); }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

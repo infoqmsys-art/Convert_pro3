@@ -11,6 +11,9 @@ except ImportError:
     _PSUTIL_AVAILABLE = False
 
 
+_MAX_RECORDS = 500  # 최대 보관 레코드 수 (초과 시 오래된 것 삭제)
+
+
 class MemoryTracker:
     """
     Convert Pro 3 - Runtime Memory Tracker (Prototype)
@@ -18,6 +21,7 @@ class MemoryTracker:
     - 현재 프로세스 메모리(RSS) 측정
     - 실행 단계별 메모리 사용량을 JSON으로 기록
     - psutil 미설치 시 자동 비활성화 (프로그램 영향 없음)
+    - 레코드가 MAX_RECORDS 초과 시 오래된 것 자동 정리
     """
 
     def __init__(self, base_dir: str, filename: str = "runtime_memory.json"):
@@ -77,6 +81,10 @@ class MemoryTracker:
                 }
 
             data["records"].append(record)
+
+            # 최대 레코드 수 초과 시 오래된 것 제거
+            if len(data["records"]) > _MAX_RECORDS:
+                data["records"] = data["records"][-_MAX_RECORDS:]
 
             with open(self.path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)

@@ -1,0 +1,62 @@
+{% if can_edit and selected_logger %}
+<button type="button" class="sns-capture-btn sns-capture-btn-add" id="sns-open-add-sensor">센서추가</button>
+{% endif %}
+
+{% if selected_logger %}
+  {% if can_edit %}
+  <form
+    method="post"
+    action="{{ url_for('site_workspace_sensor_settings', site_id=site.id) }}"
+    class="sns-order-bar {% if not selected_channel %}sns-order-bar--placeholder{% endif %}"
+  >
+    <input type="hidden" name="_action" value="update_sensor_channel_only"/>
+    <input type="hidden" name="sensor_logger_id" value="{{ selected_logger.id }}"/>
+    <input type="hidden" name="sensor_channel_id" value="{{ selected_channel.id if selected_channel else '' }}"/>
+    <label class="sns-order-label">
+      <span>인덱스</span>
+      <input
+        type="number"
+        name="channel_index"
+        class="sns-order-input"
+        min="0"
+        step="1"
+        required
+        value="{% if selected_channel %}{{ selected_channel.channel_index }}{% else %}{{ sensor_add_suggested_channel_index | default(0) }}{% endif %}"
+        {% if not selected_channel %}disabled aria-disabled="true"{% endif %}
+        title="CSV 한 줄에서 맨 왼쪽 칸을 0으로 세는 인덱스입니다. 「변경」 시 적재·표시 대상(is_active)이 켜집니다."
+      />
+    </label>
+    <button type="submit" class="sns-capture-btn sns-capture-btn-secondary" {% if not selected_channel %}disabled{% endif %}>변경</button>
+  </form>
+  {% else %}
+  <div class="sns-order-bar sns-order-bar--readonly">
+    <span class="sns-order-label muted">
+      <span>인덱스</span>
+      {% if selected_channel %}
+      <span class="sns-order-readonly-val">{{ selected_channel.channel_index }}</span>
+      {% else %}
+      <span class="muted">—</span>
+      {% endif %}
+    </span>
+  </div>
+  {% endif %}
+{% endif %}
+
+{% if selected_logger and channels %}
+<ul class="sns-side-list sns-ch-list">
+  {% for ch in channels %}
+  <li>
+    <a href="{{ url_for('site_workspace_sensor_settings', site_id=site.id, logger_id=selected_logger.id, channel_id=ch.id) }}"
+       class="sns-side-link js-sns-channel-link {% if selected_channel and selected_channel.id == ch.id %}is-active{% endif %}"
+       data-channel-id="{{ ch.id }}">
+      {{ ch|sns_ch_tree }}
+      <span class="sns-ch-sub muted">인덱스 {{ ch.channel_index }}{% if not ch.is_active %} · 미사용{% endif %}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% elif selected_logger %}
+<p class="muted sns-empty-msg small">등록된 센서 없음. <strong>센서 추가</strong>로 시작하세요.</p>
+{% else %}
+<p class="muted sns-empty-msg small">먼저 로거를 선택하세요.</p>
+{% endif %}

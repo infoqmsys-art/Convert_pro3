@@ -1,0 +1,34 @@
+# PostgreSQL — 계측 포털용 로컬 DB 서버 (개발·실험)
+# 필요: Docker Desktop 설치 후 이 폴더에서 실행
+#
+#   cd measurement_portal\database
+#   docker compose up -d
+#
+# 중지: docker compose down
+# (데이터 유지) / 전체 삭제: docker compose down -v
+#
+# DBeaver 연결:
+#   Host: localhost  Port: 5432  Database: survey_portal
+#   User / Password: 아래 environment 와 동일
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: survey_portal_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: survey
+      POSTGRES_PASSWORD: survey_dev_change_me
+      POSTGRES_DB: survey_portal
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U survey -d survey_portal"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

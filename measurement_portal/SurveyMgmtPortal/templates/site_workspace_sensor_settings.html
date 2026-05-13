@@ -1,0 +1,492 @@
+{% extends "base.html" %}
+{% block title %}{{ site.name }} — 센서설정{% endblock %}
+{% block body_class %}page-app page-sensor-settings{% endblock %}
+{% block body %}
+{% include "partials/app_header.html" %}
+<div class="app-layout ss-layout">
+  <main class="app-main ss-main">
+    {% include "partials/app_flash.html" %}
+
+    <div class="sns-page">
+      <header class="sns-page-head">
+        <h1 class="sns-page-title">{{ site.name }}</h1>
+      </header>
+
+      <div class="sns-layout">
+        <div class="sns-main">
+
+          {# 상단: 로거 #}
+          <section class="sns-panel sns-panel-logger sns-capture-panel" aria-labelledby="sns-h-loggers">
+            <div class="sns-panel-toolbar sns-capture-panel-head">
+              <h2 id="sns-h-loggers" class="sns-panel-title">로거 관리</h2>
+            </div>
+            <div class="sns-split">
+              <aside class="sns-side sns-side-loggers sns-capture-side">
+                {% if can_edit %}
+                <button type="button" class="sns-capture-btn sns-capture-btn-add" id="sns-open-add-logger">로거추가</button>
+                {% endif %}
+                {% if loggers %}
+                <ul class="sns-side-list">
+                  {% for lg in loggers %}
+                  <li>
+                    <a href="{{ url_for('site_workspace_sensor_settings', site_id=site.id, logger_id=lg.id) }}"
+                       class="sns-side-link js-sns-logger-link {% if selected_logger and selected_logger.id == lg.id %}is-active{% endif %}"
+                       data-logger-id="{{ lg.id }}">{{ lg.name }}</a>
+                  </li>
+                  {% endfor %}
+                </ul>
+                {% else %}
+                <p class="muted sns-empty-msg">등록된 로거가 없습니다.<br/><strong>로거 추가</strong>로 시작하세요.</p>
+                {% endif %}
+              </aside>
+              <div class="sns-detail" id="sns-logger-detail-mount">
+                {% include "partials/sensor_settings_logger_detail_replaceable.html" %}
+              </div>
+            </div>
+          </section>
+
+          {# 하단: 센서 #}
+          <section class="sns-panel sns-panel-sensors sns-capture-panel" aria-labelledby="sns-h-sensors">
+            <div class="sns-panel-toolbar sns-capture-panel-head">
+              <h2 id="sns-h-sensors" class="sns-panel-title">센서 관리</h2>
+            </div>
+            <div class="sns-split">
+              <aside class="sns-side sns-side-channels sns-capture-side">
+                <div id="sns-channels-aside-mount">
+                  {% include "partials/sensor_settings_channels_aside_replaceable.html" %}
+                </div>
+              </aside>
+
+              <div class="sns-detail sns-detail-sensor">
+                <div id="sns-sensor-panel-mount">
+                  {% include "partials/sensor_settings_detail_replaceable.html" %}
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
+
+        {# 우측: 센서 종류 카탈로그 #}
+        <aside class="sns-rail" aria-label="센서 종류">
+          <div class="sns-rail-toolbar">
+            <button type="button" class="btn-ghost sns-rail-nudge" disabled title="스크롤(예정)">▲</button>
+            <button type="button" class="btn-ghost sns-rail-nudge" disabled title="스크롤(예정)">▼</button>
+          </div>
+          <p class="sns-rail-title">센서 종류</p>
+          <p class="form-hint" style="font-size:11px;margin-top:4px;margin-bottom:8px;">종류 선택 시 폼에 기본값이 반영됩니다.</p>
+          <ul class="sns-rail-list">
+            {% for k in sensor_kinds %}
+            <li class="sns-rail-pick" data-kind-id="{{ k.id }}" role="button" tabindex="0">
+              <span class="sns-rail-g">{{ k.kind_group }}</span> · {{ k.label_ko }}
+            </li>
+            {% endfor %}
+          </ul>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+window.SNS_KIND_TEMPLATE_DEFAULTS = {{ kind_template_defaults_map | tojson }};
+</script>
+
+{% if can_edit %}
+<dialog id="sns-dlg-logger" class="sns-dialog">
+  <form method="post" action="{{ url_for('site_workspace_sensor_settings', site_id=site.id) }}" class="sns-dialog-form">
+    <input type="hidden" name="_action" value="add_logger"/>
+    <h3 class="sns-dialog-title">로거 추가</h3>
+    <p class="sns-dialog-lead">{{ site.name }}</p>
+    <p class="sns-dialog-expl">
+      접두 이름은 현장 코드 기준 규칙과 동일합니다.
+      접두(<code>{{ logger_name_base }}</code>) 에 <code>_0</code>, <code>_1</code>, … 순서로 붙습니다.
+      현장 영문 코드가 비어 있으면 <code>site{{ site.id }}_<em>n</em></code> 형식(site + id + 순번)을 씁니다.
+    </p>
+    <p class="sns-dialog-next">
+      이번에 추가되는 로거 이름(제안):
+      <strong><code>{{ suggested_logger_name }}</code></strong>
+    </p>
+    <label class="field field-block">
+      <span>로거 이름을 바꿀 경우 (선택)</span>
+      <input type="text" name="logger_name" value="{{ suggested_logger_name }}" autocomplete="off"/>
+    </label>
+    <input type="hidden" name="logger_kind" value="manual"/>
+    <label class="field field-block">
+      <span>로거번호 (선택)</span>
+      <span class="form-hint" style="display:block;margin-bottom:6px;">보통 장비 뒤 4자리 등 현장에서 부르는 번호를 적습니다.</span>
+      <input type="text" name="serial_number" placeholder="예: 4363" autocomplete="off" maxlength="64"/>
+    </label>
+    <div class="sns-dialog-buttons">
+      <button type="button" class="btn-ghost" data-close-dlg="">취소</button>
+      <button type="submit" class="btn-primary">추가</button>
+    </div>
+  </form>
+</dialog>
+{% if selected_logger %}
+<dialog id="sns-dlg-sensor" class="sns-dialog sns-dialog--sensor">
+  <form method="post" action="{{ url_for('site_workspace_sensor_settings', site_id=site.id) }}" class="sns-dialog-form sns-dialog-form--sensor">
+    <input type="hidden" name="_action" value="add_sensor"/>
+    <input type="hidden" name="sensor_logger_id" value="{{ selected_logger.id }}"/>
+    <header class="sns-dlg-sensor-head">
+      <h3 class="sns-dialog-title">센서 추가</h3>
+      <p class="sns-dialog-lead">로거 : <strong class="sns-mono">{{ selected_logger.name }}</strong></p>
+    </header>
+
+    <div class="sns-dlg-sensor-scroll">
+      <div class="sns-kv-sheet sns-kv-sheet--dialog">
+        <div class="sns-kv-row sns-kv-row--full">
+          <div class="sns-kv-label">센서코드 <span class="sns-req">*</span></div>
+          <div class="sns-kv-control">
+            <input type="text" name="sensor_code" id="sns-dlg-sensor-code" class="sns-kv-input" required autocomplete="off" placeholder="예: WM-1"
+                   value="{{ (site.last_add_sensor_code or '') | e }}"/>
+          </div>
+        </div>
+        <div class="sns-kv-row sns-kv-row--full">
+          <div class="sns-kv-label">센서타입 <span class="sns-req">*</span></div>
+          <div class="sns-kv-control">
+            <select id="sns-dlg-sensor-kind" name="sensor_kind" class="sns-kv-input sns-kv-select" required>
+              <option value="">-</option>
+              {% for k in sensor_kinds %}
+              <option value="{{ k.id }}" {% if site.last_add_sensor_kind == k.id %}selected{% endif %}>{{ k.label_ko }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="form-hint sns-dlg-sensor-hint">
+      이 현장에서 마지막으로 쓴 센서코드·타입은 다음에도 그대로 채워 둡니다.
+      칼럼(데이터 열)은 센서 추가 후 왼쪽 「칼럼」·「변경」에서 설정합니다.
+      시각 칼럼은 <a href="{{ url_for('legacy.logger_settings', logger_id=selected_logger.id) }}">로거 설정</a>에서 지정합니다.
+    </p>
+    <div class="sns-dialog-buttons">
+      <button type="button" class="btn-ghost" data-close-dlg="">취소</button>
+      <button type="submit" class="sns-capture-btn sns-capture-btn-primary">추가</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+
+<script>
+(function () {
+  function bindDialog(openId, dlgId) {
+    var dlg = document.getElementById(dlgId);
+    var openBtn = document.getElementById(openId);
+    if (openBtn && dlg) openBtn.addEventListener("click", function () {
+      dlg.showModal();
+    });
+    if (!dlg) return;
+    dlg.querySelector("[data-close-dlg]")?.addEventListener("click", function () { dlg.close(); });
+    dlg.addEventListener("cancel", function (ev) {
+      ev.preventDefault();
+      dlg.close();
+    });
+    dlg.addEventListener("click", function (ev) {
+      if (ev.target === dlg) dlg.close();
+    });
+  }
+  bindDialog("sns-open-add-logger", "sns-dlg-logger");
+  (function bindSensorDlgChrome() {
+    var dlg = document.getElementById("sns-dlg-sensor");
+    if (!dlg) return;
+    dlg.querySelector("[data-close-dlg]")?.addEventListener("click", function () { dlg.close(); });
+    dlg.addEventListener("cancel", function (ev) {
+      ev.preventDefault();
+      dlg.close();
+    });
+    dlg.addEventListener("click", function (ev) {
+      if (ev.target === dlg) dlg.close();
+    });
+  })();
+})();
+</script>
+{% endif %}
+<script>
+(function () {
+  var panelUrl = {{ sensor_panel_fragments_url | tojson }};
+  var purgeMeasurementsUrl = {{ url_for('legacy.api_measurements_purge') | tojson }};
+  var loggerId = {% if selected_logger %}{{ selected_logger.id | int }}{% else %}null{% endif %};
+
+  function padPurge(n) { return n < 10 ? '0' + n : '' + n; }
+  function fmtSqlLocalPurge(dtLocalStr) {
+    if (!dtLocalStr) return null;
+    var d = new Date(dtLocalStr);
+    if (isNaN(d.getTime())) return null;
+    return d.getFullYear() + '-' + padPurge(d.getMonth() + 1) + '-' + padPurge(d.getDate()) + ' ' +
+      padPurge(d.getHours()) + ':' + padPurge(d.getMinutes()) + ':00';
+  }
+
+  function snsApplyKindTemplateToDetailForm(kindId) {
+    var map = window.SNS_KIND_TEMPLATE_DEFAULTS || {};
+    var d = kindId ? map[kindId] : null;
+    var form = document.getElementById("sns-frm-sensor-detail");
+    if (!form || !d) return;
+    function setField(name, val) {
+      var el = form.elements.namedItem(name);
+      if (!el || el.disabled) return;
+      if (val === null || val === undefined) el.value = "";
+      else el.value = typeof val === "number" ? String(val) : String(val);
+    }
+    function setNumOrEmpty(name, val) {
+      if (val === null || val === undefined || val === "") setField(name, "");
+      else setField(name, val);
+    }
+    setNumOrEmpty("unit", d.unit);
+    setField("decimal_places", d.decimal_places != null ? d.decimal_places : "");
+    setNumOrEmpty("level1_primary", d.level1_primary);
+    setNumOrEmpty("level1_secondary", d.level1_secondary);
+    setNumOrEmpty("level2_primary", d.level2_primary);
+    setNumOrEmpty("level2_secondary", d.level2_secondary);
+    setNumOrEmpty("level3_primary", d.level3_primary);
+    setNumOrEmpty("level3_secondary", d.level3_secondary);
+    setNumOrEmpty("chart_y_min", d.chart_y_min);
+    setNumOrEmpty("chart_y_max", d.chart_y_max);
+    setNumOrEmpty("pipe_depth_m", d.pipe_depth_m);
+    setNumOrEmpty("gauge_factor", d.gauge_factor);
+    setNumOrEmpty("sensor_length_mm", d.sensor_length_mm);
+    var i;
+    for (i = 1; i <= 6; i++) {
+      var kk = "calc_formula_" + i;
+      var fv = d[kk];
+      setField(kk, fv !== null && fv !== undefined && fv !== "" ? fv : "");
+    }
+  }
+
+  function setSensorKindOnForms(kindId) {
+    var selMain = document.getElementById("sns-sensor-kind");
+    var selDlg = document.getElementById("sns-dlg-sensor-kind");
+    if (selMain && kindId) selMain.value = kindId;
+    if (selDlg && kindId) selDlg.value = kindId;
+    if (kindId) snsApplyKindTemplateToDetailForm(kindId);
+  }
+
+  document.body.addEventListener("change", function (ev) {
+    var t = ev.target;
+    if (t && t.id === "sns-sensor-kind") {
+      snsApplyKindTemplateToDetailForm(t.value);
+    }
+  });
+
+  document.body.addEventListener("click", function (ev) {
+    var openSens = ev.target && ev.target.closest ? ev.target.closest("#sns-open-add-sensor") : null;
+    if (openSens) {
+      var dlg = document.getElementById("sns-dlg-sensor");
+      if (dlg) dlg.showModal();
+    }
+  });
+
+  document.body.addEventListener("click", function (ev) {
+    var purgeBtn = ev.target && ev.target.closest ? ev.target.closest("#sns-btn-logger-purge") : null;
+    if (purgeBtn && purgeMeasurementsUrl && !purgeBtn.disabled) {
+      var lid = purgeBtn.getAttribute("data-logger-id");
+      if (!lid) return;
+      var lname = purgeBtn.getAttribute("data-logger-name") || ("ID " + lid);
+      var elFrom = document.getElementById("sns-logger-purge-from");
+      var elTo = document.getElementById("sns-logger-purge-to");
+      var from = elFrom && fmtSqlLocalPurge(elFrom.value);
+      var to = elTo && fmtSqlLocalPurge(elTo.value);
+      if (!from || !to) {
+        alert("시작·종료 시각을 모두 지정하세요.");
+        return;
+      }
+      if (!window.confirm("로거 「" + lname + "」에 속한 모든 센서 측정 데이터를 DB에서 삭제할까요?\n\n" + from + " ~ " + to + "\n\n되돌릴 수 없습니다.")) return;
+      fetch(purgeMeasurementsUrl, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          logger_device_id: parseInt(lid, 10),
+          time_from: from,
+          time_to: to,
+          note: "sensor_settings: 로거 기간데이터삭제",
+        }),
+      })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) {
+          if (!x.ok) {
+            alert(x.j && x.j.error ? x.j.error : "삭제 실패");
+            return;
+          }
+          var n = x.j && x.j.deleted != null ? x.j.deleted : 0;
+          alert("삭제 완료: " + n + "행.");
+          if (elFrom) elFrom.value = "";
+          if (elTo) elTo.value = "";
+        })
+        .catch(function () {
+          alert("삭제 요청 실패 (네트워크)");
+        });
+      return;
+    }
+    var rail = ev.target && ev.target.closest ? ev.target.closest(".sns-rail-pick") : null;
+    if (!rail) return;
+    var rid = rail.getAttribute("data-kind-id");
+    if (rid) setSensorKindOnForms(rid);
+  });
+  document.body.addEventListener("keydown", function (ev) {
+    var rail = ev.target && ev.target.closest ? ev.target.closest(".sns-rail-pick") : null;
+    if (!rail || (ev.key !== "Enter" && ev.key !== " ")) return;
+    ev.preventDefault();
+    var rid = rail.getAttribute("data-kind-id");
+    if (rid) setSensorKindOnForms(rid);
+  });
+
+  function captureScroll() {
+    var innerEl = document.getElementById("sns-sensor-scroll");
+    return {
+      win: window.scrollY || document.documentElement.scrollTop || 0,
+      inner: innerEl ? innerEl.scrollTop : 0
+    };
+  }
+
+  function restoreScroll(s) {
+    if (!s) return;
+    window.scrollTo(0, s.win);
+    var innerEl = document.getElementById("sns-sensor-scroll");
+    if (innerEl) innerEl.scrollTop = s.inner;
+  }
+
+  function syncSensorDialogLoggerId() {
+    var dlg = document.getElementById("sns-dlg-sensor");
+    if (!dlg || loggerId == null) return;
+    var hid = dlg.querySelector('input[name="sensor_logger_id"]');
+    if (hid) hid.value = String(loggerId);
+  }
+
+  function updateLoggerLinkActive(activeLoggerId) {
+    document.querySelectorAll(".js-sns-logger-link").forEach(function (x) {
+      var lid = parseInt(x.getAttribute("data-logger-id"), 10);
+      x.classList.toggle("is-active", activeLoggerId != null && lid === activeLoggerId);
+    });
+  }
+
+  function updateChannelLinkActive(activeChannelId) {
+    document.querySelectorAll(".js-sns-channel-link").forEach(function (x) {
+      var cid = parseInt(x.getAttribute("data-channel-id"), 10);
+      x.classList.toggle("is-active", activeChannelId != null && cid === activeChannelId);
+    });
+  }
+
+  function parseChannelFromLocation() {
+    try {
+      var u = new URL(location.href);
+      var raw = u.searchParams.get("channel_id");
+      if (raw == null || raw === "") return null;
+      var n = parseInt(raw, 10);
+      return isNaN(n) ? null : n;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function parseLoggerFromLocation() {
+    try {
+      var u = new URL(location.href);
+      var raw = u.searchParams.get("logger_id");
+      if (raw == null || raw === "") return null;
+      var n = parseInt(raw, 10);
+      return isNaN(n) ? null : n;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function swapWorkspace(newLoggerId, channelId, pushHref) {
+    if (!panelUrl) return;
+    var s = captureScroll();
+    var url = panelUrl + "?logger_id=" + encodeURIComponent(String(newLoggerId)) + "&zones=workspace";
+    if (channelId != null) url += "&channel_id=" + encodeURIComponent(String(channelId));
+    fetch(url, { credentials: "same-origin", headers: { Accept: "application/json" } })
+      .then(function (r) {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
+      .then(function (data) {
+        var ldm = document.getElementById("sns-logger-detail-mount");
+        var cam = document.getElementById("sns-channels-aside-mount");
+        var pm = document.getElementById("sns-sensor-panel-mount");
+        if (ldm && data.logger_detail_html != null) ldm.innerHTML = data.logger_detail_html;
+        if (cam && data.channels_aside_html != null) cam.innerHTML = data.channels_aside_html;
+        if (pm) pm.innerHTML = data.detail_html;
+        loggerId = data.logger_id != null ? Number(data.logger_id) : Number(newLoggerId);
+        syncSensorDialogLoggerId();
+        updateLoggerLinkActive(loggerId);
+        updateChannelLinkActive(data.channel_id);
+        restoreScroll(s);
+        if (pushHref) history.replaceState({ snsSensorPanel: 1 }, "", pushHref);
+      })
+      .catch(function () {
+        location.reload();
+      });
+  }
+
+  function swapSensorPanel(channelId, pushHref) {
+    if (!panelUrl || loggerId == null) return;
+    var s = captureScroll();
+    var url = panelUrl + "?logger_id=" + encodeURIComponent(String(loggerId)) + "&zones=sensor";
+    if (channelId != null) url += "&channel_id=" + encodeURIComponent(String(channelId));
+    fetch(url, { credentials: "same-origin", headers: { Accept: "application/json" } })
+      .then(function (r) {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
+      .then(function (data) {
+        var pm = document.getElementById("sns-sensor-panel-mount");
+        var cam = document.getElementById("sns-channels-aside-mount");
+        if (pm) pm.innerHTML = data.detail_html;
+        if (cam && data.channels_aside_html != null) cam.innerHTML = data.channels_aside_html;
+        restoreScroll(s);
+        updateChannelLinkActive(data.channel_id);
+        if (pushHref) history.replaceState({ snsSensorPanel: 1 }, "", pushHref);
+      })
+      .catch(function () {
+        location.reload();
+      });
+  }
+
+  document.body.addEventListener("click", function (ev) {
+    var a = ev.target && ev.target.closest ? ev.target.closest("a.js-sns-logger-link") : null;
+    if (!a || !panelUrl) return;
+    if (ev.button !== 0 || ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey) return;
+    var lid = parseInt(a.getAttribute("data-logger-id"), 10);
+    if (isNaN(lid)) return;
+    if (loggerId != null && lid === loggerId && a.classList.contains("is-active")) {
+      ev.preventDefault();
+      return;
+    }
+    ev.preventDefault();
+    swapWorkspace(lid, null, a.href);
+  });
+
+  document.body.addEventListener("click", function (ev) {
+    var a = ev.target && ev.target.closest ? ev.target.closest("a.js-sns-channel-link") : null;
+    if (!a || loggerId == null || !panelUrl) return;
+    if (ev.button !== 0 || ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey) return;
+    if (a.classList.contains("is-active")) {
+      ev.preventDefault();
+      return;
+    }
+    ev.preventDefault();
+    var cid = parseInt(a.getAttribute("data-channel-id"), 10);
+    if (isNaN(cid)) return;
+    swapSensorPanel(cid, a.href);
+  });
+
+  window.addEventListener("popstate", function () {
+    if (!document.getElementById("sns-sensor-panel-mount") || !panelUrl) return;
+    var lg = parseLoggerFromLocation();
+    var ch = parseChannelFromLocation();
+    if (lg == null) {
+      location.reload();
+      return;
+    }
+    if (loggerId == null || lg !== loggerId) {
+      swapWorkspace(lg, ch, null);
+      return;
+    }
+    swapSensorPanel(ch, null);
+  });
+})();
+</script>
+{% endblock %}

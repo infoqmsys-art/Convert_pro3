@@ -1,0 +1,1077 @@
+{% extends "base.html" %}
+{% block title %}{{ channel|sns_ch_auto_name }} — 그래프{% endblock %}
+{% block body_class %}page-app{% endblock %}
+{% block body %}
+{% include "partials/app_header.html" %}
+<div class="app-layout">
+  {% include "partials/app_sidebar.html" %}
+  <main class="app-main">
+    <p class="back-row">
+      <a class="btn-ghost btn-sm" href="{{ url_for('site_workspace_sensor_settings', site_id=channel.site_id, logger_id=channel.logger_device_id) }}">← 센서설정</a>
+    </p>
+    <section class="hero-strip">
+        <div>
+          <h2 class="sw-data-title sw-data-title--sensor">
+            <span class="sw-head-kind">{{ channel|sns_ch_kind_title }}</span>
+            <span class="sw-head-code">{{ channel.sensor_code or '—' }}</span>
+          </h2>
+          <p>{{ channel.org_name }} · {{ channel.site_name }} · 로거 {{ channel.logger_name }}{% if channel.unit %} · 단위 {{ channel.unit }}{% endif %} · 센서명 {{ channel|sns_ch_auto_name }}</p>
+        </div>
+    </section>
+
+    <section class="panel form-panel">
+      <h3>기간 조회</h3>
+      <div class="form-row">
+        <label class="field">
+          <span>시작</span>
+          <input type="datetime-local" id="t-from">
+        </label>
+        <label class="field">
+          <span>종료</span>
+          <input type="datetime-local" id="t-to">
+        </label>
+        <button type="button" class="btn-primary btn-inline" id="btn-load">불러오기</button>
+        <button type="button" class="btn-danger-outline btn-inline" id="btn-purge-period" title="위 시작·종료 시각 사이의 이 센서 측정행을 DB에서 삭제합니다."
+          {% if not channel_can_purge %}disabled title="편집·삭제 권한이 있는 계정만 사용할 수 있습니다."{% endif %}>검색데이터삭제</button>
+      </div>
+      <p id="chart-status" class="form-hint">준비됨</p>
+    </section>
+
+    <section class="panel chart-panel">
+      <canvas id="chart-ts" height="120"></canvas>
+      {% if channel_tilt_chart %}
+      <p class="form-hint small" style="margin-top:10px">그래프 세로축: 조회 구간 첫 측정 대비 <strong>변위량(mm)</strong>(1000×Δ°×π/180).</p>
+      {% elif channel_inclinometer_chart %}
+      <p class="form-hint small" style="margin-top:10px">지중경사·내공변위: 그래프 세로축은 조회 구간 <strong>첫 유효 측정을 0</strong>으로 둔 <strong>초기대비 누적변위(mm)</strong>입니다.</p>
+      {% elif channel_crack_chart %}
+      <p class="form-hint small" style="margin-top:10px">균열측정계: <strong>개폭(mm)</strong> 실선과 <strong>누적(mm)</strong> 점선을 <strong>같은 세로축</strong>에 겹쳐 표시합니다. 차트 Y 최소·최대·관리기준은 이 축(mm) 기준입니다.</p>
+      {% elif channel_flow_chart %}
+      <p class="form-hint small" style="margin-top:10px">유량계: <strong>순간 유량(m³)</strong>만 주차트로 표시합니다. 세로축 기본 0~100 m³(센서설정·카탈로그). 관리기준선은 표시하지 않습니다.</p>
+      {% elif channel.sensor_kind == 'load_cell' %}
+      <p class="form-hint small" style="margin-top:10px">하중계: 그래프는 <strong>하중(Ton)</strong>이며, 기본 계산식은 <strong>m*gf</strong>(gf=게이지팩터)입니다. 표는 전회대비·초기대비를 함께 표시합니다.</p>
+      {% elif channel_groundwater_chart %}
+      <p class="form-hint small" style="margin-top:10px">지하수위계: 그래프는 <strong>지하수위(GL.m)</strong>(적재 계산 결과)입니다. 세로축 기본 −10~0.5 GL.m. 표는 측정값(V)·GL.m·변화량·전회·초기대비입니다.</p>
+      {% elif channel_vibration_3axis %}
+      <p class="form-hint small" style="margin-top:10px">진동계(3축): 대표=X, 연결=<strong>Y·Z</strong> 순. <strong>PVS = √(x²+y²+z²)</strong>&nbsp;(kine) 그래프, 표에 X/Y/Z·PVS. 연결에는 <strong>-Y -Z</strong>만 적어도 됩니다(앞쪽 센서코드에 이어 붙여 V1-Y, V1-Z 로 조회).</p>
+      {% elif channel_vibration_scalar_pvs %}
+      <p class="form-hint small" style="margin-top:10px">진동계: 적재 칼럼이 곧 <strong>PVS (kine)</strong>입니다. 3축 합성·계산 없음. 표는 측정일시·PVS·비고만 합니다.</p>
+      {% endif %}
+      <div id="chart-profile-wrap" style="display:none;margin-top:12px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+          <strong style="font-size:13px">다단 프로파일</strong>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#64748b">
+            <span>시각</span>
+            <select id="chart-profile-time" class="input-sm" style="min-width:240px"></select>
+          </label>
+        </div>
+        <canvas id="chart-profile" height="110"></canvas>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top:16px">
+      <h3 id="tbl-section-title">표본 데이터 (최대 500행)</h3>
+      <p id="tbl-section-hint" class="form-hint small" style="margin-top:6px;display:none"></p>
+      <p id="chart-tbl-initial-ref" class="sw-tbl-initial-ref" style="display:none;margin-bottom:8px" aria-live="polite"></p>
+      <div class="table-scroll">
+        <table class="data-table" id="tbl-points">
+          <thead id="chart-tbl-thead"></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
+<script>
+(function () {
+  const st0 = document.getElementById('chart-status');
+  try {
+    if (!window.Chart) {
+      if (st0) st0.textContent = '차트 라이브러리(Chart.js) 로드 실패: 네트워크/CDN 차단 가능성이 있습니다.';
+      return;
+    }
+    if (st0) st0.textContent = '불러오는 중…';
+
+  const channelId = {{ channel.id | tojson }};
+  const unit = {{ (channel.unit or '') | tojson }};
+  const decimalPlaces = {{ (channel.decimal_places if channel.decimal_places is not none else 4) | int | tojson }};
+  const codeLabel = {{ (channel.sensor_code or channel.label or '—') | tojson }};
+  const chartYMinEff = {{ channel_chart_y_min_eff | tojson }};
+  const chartYMaxEff = {{ channel_chart_y_max_eff | tojson }};
+  const channelMgmtLevels = {{ channel_mgmt_levels | tojson }};
+  const channelFlowChart = {{ channel_flow_chart | tojson }};
+  const channelVibration3Axis = {{ channel_vibration_3axis | tojson }};
+  const channelVibrationScalarPvs = {{ channel_vibration_scalar_pvs | tojson }};
+  const channelLatestObserved = {{ (channel_latest_observed or '') | tojson }};
+
+  if (channelId === null || channelId === undefined) {
+    if (st0) st0.textContent = '차트 초기화 실패: 채널 ID가 없습니다.';
+    return;
+  }
+
+  function fmtNum(v) {
+    if (v == null || v === '') return '';
+    const n = Number(v);
+    if (isNaN(n)) return '';
+    return n.toFixed(decimalPlaces);
+  }
+
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function toLocalDatetimeValue(d) {
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  let now = new Date();
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  document.getElementById('t-from').value = toLocalDatetimeValue(weekAgo);
+  document.getElementById('t-to').value = toLocalDatetimeValue(now);
+
+  const ctx = document.getElementById('chart-ts').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: (unit && unit.length) ? ('측정치 (' + unit + ')') : '측정치',
+        data: [],
+        borderColor: '#2b6cb0',
+        backgroundColor: 'rgba(43,108,176,0.12)',
+        tension: 0.15,
+        pointRadius: 0,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 2.2,
+      scales: {
+        x: { ticks: { maxRotation: 0, color: '#64748b' }, grid: { color: 'rgba(148,163,184,0.25)' } },
+        y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(148,163,184,0.25)' } }
+      },
+      plugins: { legend: { labels: { color: '#475569' } } }
+    }
+  });
+
+  const elProfileWrap = document.getElementById('chart-profile-wrap');
+  const elProfileTime = document.getElementById('chart-profile-time');
+  const elProfileCanvas = document.getElementById('chart-profile');
+  let profileChart = null;
+
+  function ensureProfileChart() {
+    if (!elProfileCanvas) return null;
+    if (profileChart) return profileChart;
+    const pctx = elProfileCanvas.getContext('2d');
+    profileChart = new Chart(pctx, {
+      type: 'line',
+      data: { labels: [], datasets: [{ label: '프로파일(mm)', data: [], borderColor: '#0f172a', backgroundColor: 'rgba(15,23,42,0.08)', tension: 0.2, pointRadius: 3, borderWidth: 2 }] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        aspectRatio: 2.6,
+        scales: {
+          x: { ticks: { color: '#64748b' }, grid: { color: 'rgba(148,163,184,0.2)' } },
+          y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(148,163,184,0.2)' }, title: { display: true, text: 'mm', color: '#334155' } },
+        },
+        plugins: { legend: { display: false } },
+      }
+    });
+    return profileChart;
+  }
+
+  if (chartYMinEff !== null && chartYMinEff !== undefined && Number.isFinite(Number(chartYMinEff))) {
+    chart.options.scales.y.min = Number(chartYMinEff);
+  }
+  if (chartYMaxEff !== null && chartYMaxEff !== undefined && Number.isFinite(Number(chartYMaxEff))) {
+    chart.options.scales.y.max = Number(chartYMaxEff);
+  }
+
+  function fmtSqlLocal(dtLocalStr) {
+    if (!dtLocalStr) return null;
+    const d = new Date(dtLocalStr);
+    if (isNaN(d.getTime())) return null;
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':00';
+  }
+
+  const purgeUrl = {{ url_for('legacy.api_measurements_purge') | tojson }};
+  const bundleUrl = {{ url_for('legacy.api_measurement_series_bundle') | tojson }};
+  const WS_COLORS = [
+    { b: '#2b6cb0', f: 'rgba(43,108,176,0.12)' },
+    { b: '#ea580c', f: 'rgba(234,88,12,0.12)' },
+    { b: '#16a34a', f: 'rgba(22,163,74,0.12)' },
+  ];
+
+  function fmtDispMm(v) {
+    if (v == null || v === '') return '';
+    const n = Number(v);
+    if (isNaN(n)) return '';
+    return n.toFixed(3);
+  }
+
+  function fmtMmCell(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    const n = Number(v);
+    if (isNaN(n)) return '—';
+    return n.toFixed(3);
+  }
+
+  function fmtMmDeltaCell(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    const n = Number(v);
+    if (isNaN(n)) return '—';
+    var s = n.toFixed(3);
+    if (n > 0) return '+' + s;
+    return s;
+  }
+
+  function fmtM3Cell(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    const n = Number(v);
+    if (isNaN(n)) return '—';
+    return n.toFixed(2);
+  }
+
+  function fmtM3DeltaCell(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    const n = Number(v);
+    if (isNaN(n)) return '—';
+    var s = n.toFixed(2);
+    if (n > 0) return '+' + s;
+    return s;
+  }
+
+  function fmtGwMagCell(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    const n = Number(v);
+    if (isNaN(n)) return '—';
+    return Math.abs(n).toFixed(decimalPlaces);
+  }
+
+  function fmtGwDeltaCell(v) {
+    if (v === null || v === undefined || v === '') return '—';
+    const n = Number(v);
+    if (isNaN(n)) return '—';
+    var s = n.toFixed(decimalPlaces);
+    if (n > 0) return '+' + s;
+    return s;
+  }
+
+  function fmtByCh2(ch, v) {
+    if (v == null || v === '') return '';
+    const n = Number(v);
+    if (isNaN(n)) return '';
+    var dp = (ch.decimal_places != null) ? parseInt(ch.decimal_places, 10) : decimalPlaces;
+    if (!Number.isFinite(dp)) dp = decimalPlaces;
+    return n.toFixed(dp);
+  }
+
+  function buildPointMaps(chans) {
+    return chans.map(function (ch) {
+      var m = {};
+      (ch.points || []).forEach(function (p) {
+        var t = (p.observed_at || '').replace('T', ' ').slice(0, 19);
+        if (t) m[t] = p;
+      });
+      return m;
+    });
+  }
+
+  function mergedTimeLabels(chans) {
+    var set = {};
+    chans.forEach(function (ch) {
+      (ch.points || []).forEach(function (p) {
+        var t = (p.observed_at || '').replace('T', ' ').slice(0, 19);
+        if (t) set[t] = true;
+      });
+    });
+    return Object.keys(set).sort();
+  }
+
+  function appendMgmtThresholdDatasets(labelsFull) {
+    if (channelFlowChart) return;
+    if (!labelsFull || !labelsFull.length || !channelMgmtLevels) return;
+    var pairs = [
+      { pri: 'level1_primary', sec: 'level1_secondary', labelPri: '1차관리(주)', labelSec: '1차관리(보조)', color: '#84cc16' },
+      { pri: 'level2_primary', sec: 'level2_secondary', labelPri: '2차관리(주)', labelSec: '2차관리(보조)', color: '#eab308' },
+      { pri: 'level3_primary', sec: 'level3_secondary', labelPri: '3차관리(주)', labelSec: '3차관리(보조)', color: '#dc2626' },
+    ];
+    pairs.forEach(function (pair) {
+      [
+        { key: pair.pri, label: pair.labelPri },
+        { key: pair.sec, label: pair.labelSec },
+      ].forEach(function (spec) {
+        var raw = channelMgmtLevels[spec.key];
+        if (raw === null || raw === undefined) return;
+        var y = Number(raw);
+        if (!Number.isFinite(y)) return;
+        chart.data.datasets.push({
+          _ws_mgmt_line: true,
+          label: spec.label,
+          data: labelsFull.map(function () { return y; }),
+          borderColor: pair.color,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          borderWidth: 2,
+          fill: false,
+          tension: 0,
+        });
+      });
+    });
+  }
+
+  function syncChartDs(n) {
+    while (chart.data.datasets.length < n) {
+      var i = chart.data.datasets.length;
+      var col = WS_COLORS[i % WS_COLORS.length];
+      chart.data.datasets.push({
+        label: '',
+        data: [],
+        borderColor: col.b,
+        backgroundColor: col.f,
+        tension: 0.15,
+        pointRadius: 0,
+        borderWidth: 2,
+      });
+    }
+    while (chart.data.datasets.length > n) chart.data.datasets.pop();
+  }
+
+  function primaryInitialTimeKey(chans) {
+    if (!chans || !chans.length) return null;
+    var pts = chans[0].points || [];
+    var crack = !!chans[0].crack_table;
+    var flow = !!chans[0].flow_table;
+    var gw = !!chans[0].groundwater_table;
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i];
+      if (crack) {
+        var mm = p.crack_read_mm;
+        if (mm !== null && mm !== undefined && !Number.isNaN(Number(mm))) {
+          return (p.observed_at || '').replace('T', ' ').slice(0, 19);
+        }
+        continue;
+      }
+      if (flow) {
+        var fq = p.flow_qty_m3;
+        if (fq !== null && fq !== undefined && !Number.isNaN(Number(fq))) {
+          return (p.observed_at || '').replace('T', ' ').slice(0, 19);
+        }
+        continue;
+      }
+      if (gw) {
+        var vg = p.gw_gl_m;
+        if (vg !== null && vg !== undefined && !Number.isNaN(Number(vg))) {
+          return (p.observed_at || '').replace('T', ' ').slice(0, 19);
+        }
+        continue;
+      }
+      var vr = pts[i].value_real;
+      if (vr !== null && vr !== undefined && !Number.isNaN(Number(vr))) {
+        return (pts[i].observed_at || '').replace('T', ' ').slice(0, 19);
+      }
+    }
+    return null;
+  }
+
+  function remarkMarkup(lb, t0) {
+    if (t0 && lb === t0) return '<td><strong>초기치</strong></td>';
+    return '<td></td>';
+  }
+
+  async function purgePeriodMeasurements() {
+    const st = document.getElementById('chart-status') || st0;
+    const from = fmtSqlLocal(document.getElementById('t-from').value);
+    const to = fmtSqlLocal(document.getElementById('t-to').value);
+    if (!from || !to) {
+      if (st) st.textContent = '삭제하려면 시작·종료 시각을 모두 지정하세요.';
+      return;
+    }
+    var msg = '선택한 구간의 측정 데이터를 DB에서 삭제할까요?\n\n' + from + ' ~ ' + to + '\n\n이 작업은 되돌릴 수 없습니다.';
+    if (!window.confirm(msg)) return;
+    if (st) st.textContent = '삭제 중…';
+    var res, data;
+    try {
+      res = await fetch(purgeUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          sensor_channel_id: channelId,
+          time_from: from,
+          time_to: to,
+          note: 'channel_chart: 검색데이터삭제'
+        })
+      });
+      data = await res.json();
+    } catch (e) {
+      if (st) st.textContent = '삭제 요청 실패 (네트워크)';
+      return;
+    }
+    if (!res.ok) {
+      if (st) st.textContent = data.error || '삭제 실패';
+      return;
+    }
+    if (st) st.textContent = '삭제 완료: ' + (data.deleted != null ? data.deleted : 0) + '행. 다시 불러옵니다.';
+    await loadSeries();
+  }
+
+  async function loadSeries() {
+    const st = document.getElementById('chart-status') || st0;
+    const from = fmtSqlLocal(document.getElementById('t-from').value);
+    const to = fmtSqlLocal(document.getElementById('t-to').value);
+    const params = new URLSearchParams({ sensor_channel_id: String(channelId), limit: '5000' });
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (st) st.textContent = '불러오는 중…';
+    let res, bundle;
+    try {
+      res = await fetch(bundleUrl + '?' + params.toString(), { credentials: 'same-origin' });
+      try {
+        bundle = await res.json();
+      } catch (e) {
+        bundle = null;
+      }
+    } catch (e) {
+      st.textContent = '불러오기 실패 (네트워크)';
+      return;
+    }
+    if (!bundle) {
+      if (st) st.textContent = '불러오기 실패 (세션 만료/JSON 오류 가능).';
+      return;
+    }
+    if (!res.ok) {
+      if (st) st.textContent = bundle.error || '오류';
+      return;
+    }
+    var chans = bundle.channels || [];
+    var miss = bundle.missing_linked_codes || [];
+    var vbMeta = bundle.vibration_3axis || null;
+    var vibm3Pts = (vbMeta && vbMeta.points && vbMeta.points.length > 0) ? vbMeta.points : null;
+    var labelsFull = mergedTimeLabels(chans);
+    var maps = buildPointMaps(chans);
+    chart.data.labels = labelsFull.map(function (lb) { return lb.slice(0, 16); });
+    var crackSingle = chans.length === 1 && !!chans[0].crack_table;
+    var flowSingle = chans.length === 1 && !!chans[0].flow_table;
+    var loadSingle = chans.length === 1 && !!chans[0].load_cell_table && !chans[0].tilt_table && !chans[0].inclinometer_table && !chans[0].crack_table && !chans[0].flow_table;
+    var ssSingle = chans.length === 1 && !!chans[0].surface_settlement_table && !chans[0].tilt_table && !chans[0].inclinometer_table && !chans[0].crack_table && !chans[0].flow_table && !chans[0].load_cell_table;
+    var gwSingle = chans.length === 1 && !!chans[0].groundwater_table && !chans[0].tilt_table && !chans[0].inclinometer_table && !chans[0].crack_table && !chans[0].flow_table && !chans[0].load_cell_table && !chans[0].surface_settlement_table;
+    var vibScalarSingle = chans.length === 1 && channelVibrationScalarPvs && chans[0] && !chans[0].tilt_table && !chans[0].inclinometer_table && !chans[0].crack_table && !chans[0].flow_table && !chans[0].groundwater_table && !chans[0].load_cell_table && !chans[0].surface_settlement_table;
+    if (vibm3Pts) {
+      var vLabels = vibm3Pts.map(function (p) { return String(p.observed_at || '').replace('T', ' ').slice(0, 16); });
+      chart.data.labels = vLabels;
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'kine (PVS)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDs(1);
+      var dsV = chart.data.datasets[0];
+      delete dsV.yAxisID;
+      dsV.borderDash = [];
+      dsV.borderColor = WS_COLORS[0].b;
+      dsV.backgroundColor = WS_COLORS[0].f;
+      dsV.label = 'PVS √(x²+y²+z²)';
+      dsV.data = vibm3Pts.map(function (p) {
+        var pv = p.vib_pvs_gal;
+        return pv === null || pv === undefined || Number.isNaN(Number(pv)) ? null : Number(pv);
+      });
+    } else if (vibScalarSingle) {
+      var vLabelsSc = labelsFull.map(function (lbSc) { return lbSc.slice(0, 16); });
+      chart.data.labels = vLabelsSc;
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'kine (PVS)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDs(1);
+      var cmapCh = maps[0];
+      var dsVs = chart.data.datasets[0];
+      delete dsVs.yAxisID;
+      dsVs.borderDash = [];
+      dsVs.borderColor = WS_COLORS[0].b;
+      dsVs.backgroundColor = WS_COLORS[0].f;
+      dsVs.label = 'PVS';
+      dsVs.data = labelsFull.map(function (lbMx) {
+        var pMx = cmapCh[lbMx];
+        if (!pMx) return null;
+        var xv = pMx.value_real;
+        return xv === null || xv === undefined || Number.isNaN(Number(xv)) ? null : Number(xv);
+      });
+    } else if (vbMeta && vbMeta.points && vbMeta.points.length === 0 && chans.length === 3 && channelVibration3Axis) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'kine (PVS)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDs(1);
+      chart.data.labels = [];
+      var dsVe = chart.data.datasets[0];
+      delete dsVe.yAxisID;
+      dsVe.label = 'PVS';
+      dsVe.data = [];
+    } else if (crackSingle) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'mm (개폭·누적)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDs(2);
+      var ch0 = chans[0];
+      var cmap0 = maps[0];
+      var colA = WS_COLORS[0];
+      var colB = WS_COLORS[1];
+      var dsA = chart.data.datasets[0];
+      delete dsA.yAxisID;
+      dsA.borderDash = [];
+      dsA.borderColor = colA.b;
+      dsA.backgroundColor = colA.f;
+      dsA.label = (ch0.sensor_code || ('CH' + ch0.sensor_channel_id)) + ' · 개폭(mm)';
+      dsA.data = labelsFull.map(function (lb) {
+        var p = cmap0[lb];
+        if (!p) return null;
+        var xm = p.crack_read_mm;
+        return xm === null || xm === undefined || Number.isNaN(Number(xm)) ? null : Number(xm);
+      });
+      var dsB = chart.data.datasets[1];
+      delete dsB.yAxisID;
+      dsB.borderDash = [6, 4];
+      dsB.borderColor = colB.b;
+      dsB.backgroundColor = colB.f;
+      dsB.label = (ch0.sensor_code || ('CH' + ch0.sensor_channel_id)) + ' · 누적(mm)';
+      dsB.data = labelsFull.map(function (lb) {
+        var p = cmap0[lb];
+        if (!p) return null;
+        var xc = p.crack_cumulative_mm;
+        return xc === null || xc === undefined || Number.isNaN(Number(xc)) ? null : Number(xc);
+      });
+    } else if (flowSingle) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'm³ (유량)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDs(1);
+      var chF = chans[0];
+      var cmapF = maps[0];
+      var dsF = chart.data.datasets[0];
+      delete dsF.yAxisID;
+      dsF.borderDash = [];
+      dsF.borderColor = WS_COLORS[0].b;
+      dsF.backgroundColor = WS_COLORS[0].f;
+      dsF.label = (chF.sensor_code || ('CH' + chF.sensor_channel_id)) + ' · 유량(m³)';
+      dsF.data = labelsFull.map(function (lb) {
+        var p = cmapF[lb];
+        if (!p) return null;
+        var xq = p.flow_qty_m3;
+        return xq === null || xq === undefined || Number.isNaN(Number(xq)) ? null : Number(xq);
+      });
+    } else if (loadSingle) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'Ton (하중)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDs(1);
+      var chL = chans[0];
+      var cmapL = maps[0];
+      var dsL = chart.data.datasets[0];
+      delete dsL.yAxisID;
+      dsL.borderDash = [];
+      dsL.borderColor = WS_COLORS[0].b;
+      dsL.backgroundColor = WS_COLORS[0].f;
+      dsL.label = (chL.sensor_code || ('CH' + chL.sensor_channel_id)) + ' · 하중(Ton)';
+      dsL.data = labelsFull.map(function (lb) {
+        var p = cmapL[lb];
+        if (!p) return null;
+        var xl = p.load_ton != null && p.load_ton !== undefined ? p.load_ton : p.value_real;
+        return xl === null || xl === undefined || Number.isNaN(Number(xl)) ? null : Number(xl);
+      });
+    } else if (ssSingle) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'mm (지표침하)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDs(1);
+      var chS = chans[0];
+      var cmapS = maps[0];
+      var dsS = chart.data.datasets[0];
+      delete dsS.yAxisID;
+      dsS.borderDash = [];
+      dsS.borderColor = WS_COLORS[0].b;
+      dsS.backgroundColor = WS_COLORS[0].f;
+      dsS.label = (chS.sensor_code || ('CH' + chS.sensor_channel_id)) + ' · 침하(mm)';
+      dsS.data = labelsFull.map(function (lb) {
+        var p = cmapS[lb];
+        if (!p) return null;
+        var xs = p.ss_read_mm != null && p.ss_read_mm !== undefined ? p.ss_read_mm : p.value_real;
+        return xs === null || xs === undefined || Number.isNaN(Number(xs)) ? null : Number(xs);
+      });
+    } else if (gwSingle) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'GL.m (지하수위)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDs(1);
+      var chG = chans[0];
+      var cmapG = maps[0];
+      var dsG = chart.data.datasets[0];
+      delete dsG.yAxisID;
+      dsG.borderDash = [];
+      dsG.borderColor = WS_COLORS[0].b;
+      dsG.backgroundColor = WS_COLORS[0].f;
+      dsG.label = (chG.sensor_code || ('CH' + chG.sensor_channel_id)) + ' · GL.m';
+      dsG.data = labelsFull.map(function (lb) {
+        var p = cmapG[lb];
+        if (!p) return null;
+        var xg = p.gw_gl_m != null && p.gw_gl_m !== undefined ? p.gw_gl_m : p.value_real;
+        return xg === null || xg === undefined || Number.isNaN(Number(xg)) ? null : Number(xg);
+      });
+    } else {
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      if (chart.options.scales.y.title) delete chart.options.scales.y.title;
+      syncChartDs(chans.length);
+      for (var di = 0; di < chans.length; di++) {
+        var ch = chans[di];
+        var cmap = maps[di];
+        var tilt = !!ch.tilt_table;
+        var inc = !!ch.inclinometer_table;
+        var crack = !!ch.crack_table;
+        var flow = !!ch.flow_table;
+        var ldt = !!ch.load_cell_table;
+        var gwt = !!ch.groundwater_table;
+        var col = WS_COLORS[di % WS_COLORS.length];
+        var ds = chart.data.datasets[di];
+        delete ds.yAxisID;
+        ds.borderDash = [];
+        ds.borderColor = col.b;
+        ds.backgroundColor = col.f;
+        ds.label = (ch.sensor_code || ('CH' + ch.sensor_channel_id))
+          + (tilt ? ' · 변위(mm)' : (inc ? ' · 초기대비(mm)' : (crack ? ' · 개폭(mm)' : (flow ? ' · 유량(m³)' : (ldt ? ' · 하중(Ton)' : (gwt ? ' · GL.m' : (ch.unit ? ' (' + ch.unit + ')' : '')))))));
+        ds.data = labelsFull.map(function (lb) {
+          var p = cmap[lb];
+          if (!p) return null;
+          if (tilt || inc) {
+            var x = p.disp_mm;
+            return x === null || x === undefined || Number.isNaN(Number(x)) ? null : Number(x);
+          }
+          if (crack) {
+            var xm = p.crack_read_mm;
+            return xm === null || xm === undefined || Number.isNaN(Number(xm)) ? null : Number(xm);
+          }
+          if (flow) {
+            var xf = p.flow_qty_m3;
+            return xf === null || xf === undefined || Number.isNaN(Number(xf)) ? null : Number(xf);
+          }
+          if (ldt) {
+            var xl = p.load_ton != null && p.load_ton !== undefined ? p.load_ton : p.value_real;
+            return xl === null || xl === undefined || Number.isNaN(Number(xl)) ? null : Number(xl);
+          }
+          if (gwt) {
+            var xgl = p.gw_gl_m != null && p.gw_gl_m !== undefined ? p.gw_gl_m : p.value_real;
+            return xgl === null || xgl === undefined || Number.isNaN(Number(xgl)) ? null : Number(xgl);
+          }
+          var xv = p.value_real;
+          return xv === null || xv === undefined || Number.isNaN(Number(xv)) ? null : Number(xv);
+        });
+      }
+      var anyIncCh = chans.some(function (c) { return c.inclinometer_table; });
+      var anyTiltCh = chans.some(function (c) { return c.tilt_table; });
+      if (anyIncCh && !anyTiltCh) {
+        chart.options.scales.y.title = { display: true, text: 'mm (초기대비 누적)', color: '#1e3a8a' };
+      } else if (anyTiltCh && !anyIncCh) {
+        chart.options.scales.y.title = { display: true, text: 'mm (변위)', color: '#1e3a8a' };
+      }
+    }
+    var lblForMgmt = labelsFull;
+    if (vibm3Pts) lblForMgmt = vibm3Pts.map(function (p) { return String(p.observed_at || '').replace('T', ' '); });
+    else if (vibScalarSingle) lblForMgmt = labelsFull.map(function (lb) { return lb; });
+    appendMgmtThresholdDatasets(lblForMgmt);
+    var showPts = labelsFull.length <= 1;
+    chart.data.datasets.forEach(function (ds) {
+      if (!ds || ds._ws_mgmt_line) return;
+      ds.pointRadius = showPts ? 3 : 0;
+    });
+    chart.update();
+    var missingMsg = (miss.length ? (' · 미등록 연결: ' + miss.join(', ')) : '');
+    if (vibm3Pts) {
+      st.textContent = vibm3Pts.length + '개 공통 시각(3축) · PVS 그래프' + missingMsg;
+    } else if (vibScalarSingle) {
+      st.textContent = labelsFull.length + '개 시각 · PVS 직접 적재(kine)' + missingMsg;
+    } else if (gwSingle) {
+      st.textContent = labelsFull.length + '개 시각 · 지하수위(GL.m)' + missingMsg;
+    } else if (vbMeta && channelVibration3Axis && chans.length === 3) {
+      st.textContent = '3축 진동 번들 · 공통 시각 행 없음(시각 동기 확인)' + missingMsg;
+    } else {
+      st.textContent = labelsFull.length + '개 시각' + (chans.length > 1 ? (' · ' + chans.length + '개 센서') : '') + missingMsg;
+    }
+
+    var thead = document.getElementById('chart-tbl-thead');
+    var hint = document.getElementById('tbl-section-hint');
+    var secTitle = document.getElementById('tbl-section-title');
+    var single = chans.length === 1;
+    var tilt0 = single && !!chans[0].tilt_table;
+    var inc0 = single && !!chans[0].inclinometer_table;
+    var crack0 = single && !!chans[0].crack_table;
+    var flow0 = single && !!chans[0].flow_table;
+    var load0 = single && !!chans[0].load_cell_table;
+    var ss0 = single && !!chans[0].surface_settlement_table;
+    var gw0 = single && !!chans[0].groundwater_table;
+    var allTiltMulti = chans.length > 1 && chans.every(function (c) { return c.tilt_table; });
+    var allIncMulti = chans.length > 1 && chans.every(function (c) { return c.inclinometer_table; });
+    var t0 = primaryInitialTimeKey(chans);
+    var elInitRef = document.getElementById('chart-tbl-initial-ref');
+    if (elInitRef) {
+      if (vibm3Pts || vbMeta || vibScalarSingle) {
+        elInitRef.style.display = 'none';
+        elInitRef.innerHTML = '';
+      } else if (t0) {
+        elInitRef.style.display = 'block';
+        elInitRef.innerHTML = crack0
+          ? ('초기치(균열·조회 구간 첫 유효 mm): <strong>' + t0 + '</strong> · 누적 열은 이 시각 대비 증감입니다.')
+          : (flow0
+            ? ('초기치(유량계·조회 구간 첫 유효 m³): <strong>' + t0 + '</strong> · 초기대비 열은 이 시각의 유량 대비 증감입니다.')
+            : (load0
+              ? ('초기치(하중계·조회 구간 첫 유효 Ton): <strong>' + t0 + '</strong> · 초기대비 열은 이 시각 대비 증감입니다.')
+              : (ss0
+                ? ('초기치(지표침하계·조회 구간 첫 유효 mm): <strong>' + t0 + '</strong> · 변위·초기대비는 이 시각 대비 증감입니다.')
+                : (gw0
+              ? ('초기치(지하수위·조회 구간 첫 유효 GL.m): <strong>' + t0 + '</strong> · 초기대비 열은 이 시각 대비 증감입니다.')
+              : (inc0
+              ? ('초기치(지중·내공·조회 구간 첫 유효 mm): <strong>' + t0 + '</strong> · 그래프·누적열은 이 시각을 0으로 한 상대변위(mm)입니다.')
+              : ('초기치(대표 센서·조회 구간 시간순 첫 유효 측정): <strong>' + t0 + '</strong> · 이 시각을 기준으로 변화량·변위(경사)·초기대비(일반)가 계산됩니다.'))))));
+      } else {
+        elInitRef.style.display = 'none';
+        elInitRef.innerHTML = '';
+      }
+    }
+
+    if (vibm3Pts && vbMeta.axis_sensor_codes) {
+      secTitle.textContent = '진동계(3축) 합성 (최대 500행) · ' + codeLabel;
+      var ac = vbMeta.axis_sensor_codes;
+      var escTh = function (s) { return String(s || '').replace(/</g, '&lt;'); };
+      thead.innerHTML = '<tr><th>No.</th><th>측정일시</th><th>X ' + escTh(ac[0]) + ' (kine)</th><th>Y ' + escTh(ac[1]) + ' (kine)</th><th>Z ' + escTh(ac[2]) + ' (kine)</th><th>PVS (kine)</th><th>비고</th></tr>';
+      hint.style.display = 'block';
+      hint.textContent = '번들 순서: 1번 채널=X, 2번=Y, 3번=Z. 연결에 -Y -Z 표기 가능. PVS=√(x²+y²+z²). 그래프는 PVS만 표시합니다.';
+    } else if (vibScalarSingle) {
+      secTitle.textContent = '측정 표 (최대 500행) · ' + codeLabel;
+      thead.innerHTML = '<tr><th>No.</th><th>측정일시</th><th>PVS (kine)</th><th>비고</th></tr>';
+      hint.style.display = 'block';
+      hint.textContent = '진동계: 적재 칼럼이 PVS(kine)입니다. √합성·전회·초기대비 없음.';
+    } else if (single && tilt0) {
+      secTitle.textContent = '측정 표 (최대 500행) · ' + codeLabel;
+      thead.innerHTML = '<tr><th>No.</th><th>측정일시</th><th>측정치(V)</th><th>측정치(deg)</th><th>변화량(deg)</th><th>변위량(mm)</th><th>각변위</th><th>비고</th></tr>';
+      hint.style.display = 'block';
+      hint.textContent = '구조물경사계(5V=30°): 측정치(V)=원천값. 각도(°)=V×6. 변화량(°)=각도−초기각도(조회 구간 첫 유효 각도). 변위량(mm)=1000×변화량(°)×(π/180) 근사(mm)입니다.';
+    } else if (single && inc0) {
+      secTitle.textContent = '측정 표 (최대 500행) · ' + codeLabel;
+      thead.innerHTML = '<tr><th>No.</th><th>측정일시</th><th>측정치(mm)</th><th>누적변위(초기대비)(mm)</th><th>비고</th></tr>';
+      hint.style.display = 'block';
+      hint.textContent = '지중경사·내공변위: 적재값은 절대 변위(mm). 누적열·그래프는 조회 구간 첫 유효값 대비 상대변위입니다.';
+    } else if (single && crack0) {
+      secTitle.textContent = '측정 표 (최대 500행) · ' + codeLabel;
+      thead.innerHTML = '<tr><th>No.</th><th>측정일시</th><th>측정치(V)</th><th>변위(mm)</th><th>전회대비(mm)</th><th>초기대비(mm)</th><th>비고</th></tr>';
+      hint.style.display = 'block';
+      hint.textContent = '균열측정계: 측정치(V)=원천값. 변위(mm)=원시 V×10(원시가 없으면 value_real을 mm로 간주). 전회대비·초기대비는 변위(mm) 기준으로 계산합니다.';
+    } else if (single && flow0) {
+      secTitle.textContent = '측정 표 (최대 500행) · ' + codeLabel;
+      thead.innerHTML = '<tr><th>No.</th><th>측정일시</th><th>유량(m³)</th><th>전회대비(m³)</th><th>초기대비(m³)</th><th>비고</th></tr>';
+      hint.style.display = 'block';
+      hint.textContent = '유량계: 순간 유량은 1번 계산식(스케일 후 m³) 결과입니다. 전회대비는 직전 유효 행 대비, 초기대비는 구간 첫 유효 행 대비입니다. 그래프는 순간 유량만 표시합니다.';
+    } else if (single && load0) {
+      secTitle.textContent = '측정 표 (최대 500행) · ' + codeLabel;
+      thead.innerHTML = '<tr><th>No.</th><th>측정일시</th><th>측정치(원천)</th><th>하중(Ton)</th><th>전회대비(Ton)</th><th>초기대비(Ton)</th><th>비고</th></tr>';
+      hint.style.display = 'block';
+      hint.textContent = '하중계: 측정치(원천)=CSV 원시값. 하중(Ton)=계산식(예: m*gf) 결과입니다. 전회대비·초기대비는 Ton 기준으로 계산합니다.';
+    } else if (single && ss0) {
+      secTitle.textContent = '측정 표 (최대 500행) · ' + codeLabel;
+      thead.innerHTML = '<tr><th>No.</th><th>측정일시</th><th>측정치(V)</th><th>측정치(mm)</th><th>전회대비</th><th>초기대비</th><th>비고</th></tr>';
+      hint.style.display = 'block';
+      hint.textContent = '지표침하계: 1000mm 센서 기준 계산식 m*200(mm)입니다. 표는 측정치(V)·측정치(mm)와 변위(mm) 항목의 전회대비·초기대비를 표시합니다.';
+    } else if (gwSingle) {
+      secTitle.textContent = '측정 표 (최대 500행) · ' + codeLabel;
+      thead.innerHTML = '<tr><th>No.</th><th>측정일시</th><th>측정값(V)</th><th>지하수위(GL.m)</th><th>변화량</th><th>전회대비</th><th>초기대비</th><th>비고</th></tr>';
+      hint.style.display = 'block';
+      hint.textContent = '지하수위계: 측정값(V)=원천값(value_raw). 지하수위(GL.m)=V×5−파이프심도(pipe) 계산 결과(value_real). 변화량은 직전 행 대비 절댓값입니다.';
+    } else if (single && !tilt0 && !inc0 && !vibScalarSingle && !gwSingle && !loadSingle && !ssSingle) {
+      secTitle.textContent = '표본 데이터 (최대 500행)';
+      thead.innerHTML = '<tr><th>No.</th><th>측정일시</th><th>값' + (unit ? ' (' + unit + ')' : '') + '</th><th>비고</th></tr>';
+      hint.style.display = 'none';
+      hint.textContent = '';
+    } else if (allTiltMulti) {
+      secTitle.textContent = '측정 표 (연결 ' + chans.length + '축 · 최대 500행)';
+      var r1 = '<tr><th rowspan="2">No.</th><th rowspan="2">측정일시</th>';
+      var r2 = '<tr>';
+      for (var ci = 0; ci < chans.length; ci++) {
+        var ccode = chans[ci].sensor_code || '';
+        var uu = chans[ci].unit || '';
+        r1 += '<th colspan="4">' + ccode + (uu ? ' (' + uu + ')' : '') + '</th>';
+        r2 += '<th>측정치' + (uu ? ' (' + uu + ')' : '') + '</th><th>변화량(deg)</th><th>변위량(mm)</th><th>각변위</th>';
+      }
+      r1 += '<th rowspan="2">비고</th></tr>';
+      r2 += '</tr>';
+      thead.innerHTML = r1 + r2;
+      hint.style.display = 'block';
+      hint.textContent = '연결 센서: 그래프에 각 축 변위(mm)를 겹쳐 표시합니다.';
+    } else if (allIncMulti) {
+      secTitle.textContent = '측정 표 (연결 지중 ' + chans.length + '단 · 최대 500행)';
+      var ri1c = '<tr><th rowspan="2">No.</th><th rowspan="2">측정일시</th>';
+      var ri2c = '<tr>';
+      for (var iic = 0; iic < chans.length; iic++) {
+        var cic = chans[iic].sensor_code || '';
+        ri1c += '<th colspan="2">' + cic + ' (mm)</th>';
+        ri2c += '<th>측정치(mm)</th><th>누적(초기대비)</th>';
+      }
+      ri1c += '<th rowspan="2">비고</th></tr>';
+      ri2c += '</tr>';
+      thead.innerHTML = ri1c + ri2c;
+      hint.style.display = 'block';
+      hint.textContent = '지중·내공 다단: 대표=하부(I1-1·TN001 등), 연결=하부→상부 순. 열·범례=깊이 순. 값은 채널별 조회 구간 첫 유효 대비 초기대비(mm)입니다.';
+    } else if (vbMeta && chans.length === 3 && channelVibration3Axis) {
+      secTitle.textContent = '진동계(3축) · ' + codeLabel;
+      thead.innerHTML = '<tr><th>안내</th></tr>';
+      hint.style.display = 'block';
+      hint.textContent = '3채널은 연결되었으나 공통 시각 데이터가 없습니다. 적재된 observed_at·연결 순서를 확인하세요.';
+    } else {
+      secTitle.textContent = '표본 (연결 ' + chans.length + '개)';
+      thead.innerHTML = '<tr><th>No.</th><th>측정일시</th>' + chans.map(function (c) {
+        return '<th>' + (c.sensor_code || '') + '</th>';
+      }).join('') + '<th>비고</th></tr>';
+      hint.style.display = 'block';
+      hint.textContent = '종류가 섞인 연결 센서는 열당 대표값(경사는 변위 mm)을 표시합니다.';
+    }
+
+    if (elProfileWrap && elProfileTime) {
+      if (allIncMulti) {
+        elProfileWrap.style.display = 'block';
+        var pchart = ensureProfileChart();
+        var keep = elProfileTime.value || '';
+        var maxOpts = 200;
+        var startIdx = Math.max(0, labelsFull.length - maxOpts);
+        var opts = labelsFull.slice(startIdx);
+        elProfileTime.innerHTML = '';
+        for (var oi = 0; oi < opts.length; oi++) {
+          var o = document.createElement('option');
+          o.value = opts[oi];
+          o.textContent = opts[oi];
+          elProfileTime.appendChild(o);
+        }
+        var pick = (keep && opts.indexOf(keep) >= 0) ? keep : (opts.length ? opts[opts.length - 1] : '');
+        if (pick) elProfileTime.value = pick;
+
+        function updateProfileAtTime(tKey) {
+          if (!pchart) return;
+          var xLabels = chans.map(function (c) {
+            return String(c.sensor_code || ('CH' + c.sensor_channel_id));
+          });
+          var ys = [];
+          for (var pi = 0; pi < chans.length; pi++) {
+            var mp = maps[pi] || {};
+            var pp = mp[tKey];
+            var v = pp ? pp.disp_mm : null;
+            var num = (v !== null && v !== undefined && !Number.isNaN(Number(v))) ? Number(v) : null;
+            ys.push(num);
+          }
+          pchart.data.labels = xLabels;
+          pchart.data.datasets[0].label = '초기대비(mm) · ' + String(tKey || '');
+          pchart.data.datasets[0].data = ys;
+          pchart.update();
+        }
+
+        elProfileTime.onchange = function () {
+          updateProfileAtTime(elProfileTime.value);
+        };
+        updateProfileAtTime(pick);
+      } else {
+        elProfileWrap.style.display = 'none';
+      }
+    }
+
+    const tb = document.querySelector('#tbl-points tbody');
+    tb.innerHTML = '';
+    const maxRows = 500;
+    var cap = Math.min(vibm3Pts ? vibm3Pts.length : labelsFull.length, maxRows);
+
+    if (vibm3Pts && vbMeta.axis_sensor_codes) {
+      for (let vi = 0; vi < cap; vi++) {
+        var rowp = vibm3Pts[vi];
+        if (!rowp) continue;
+        var lbs = String(rowp.observed_at || '').replace('T', ' ').slice(0, 19);
+        var trv = document.createElement('tr');
+        trv.innerHTML = '<td>' + (vi + 1) + '</td><td>' + lbs + '</td><td>' + fmtNum(rowp.vib_x_gal) + '</td><td>' + fmtNum(rowp.vib_y_gal) + '</td><td>' + fmtNum(rowp.vib_z_gal) + '</td><td>' + fmtNum(rowp.vib_pvs_gal) + '</td><td></td>';
+        tb.appendChild(trv);
+      }
+    } else if (vbMeta && chans.length === 3 && channelVibration3Axis) {
+      var trE = document.createElement('tr');
+      trE.innerHTML = '<td>공통 시각 행이 없습니다.</td>';
+      tb.appendChild(trE);
+    } else if (vibScalarSingle) {
+      var cmapPvsCh = maps[0];
+      for (let ivs = 0; ivs < cap; ivs++) {
+        var lbVs = labelsFull[ivs];
+        var pvs = cmapPvsCh[lbVs];
+        if (!pvs) continue;
+        const trVs = document.createElement('tr');
+        trVs.innerHTML = '<td>' + (ivs + 1) + '</td><td>' + lbVs + '</td><td>' + (pvs.value_real != null ? fmtNum(pvs.value_real) : '') + '</td>' + remarkMarkup(lbVs, t0);
+        tb.appendChild(trVs);
+      }
+    } else if (single && tilt0) {
+      var cmap0 = maps[0];
+      for (let i = 0; i < cap; i++) {
+        var lb = labelsFull[i];
+        var p = cmap0[lb];
+        if (!p) continue;
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + lb + '</td><td>' + (p.value_raw != null ? fmtNum(p.value_raw) : '—') + '</td><td>' + fmtNum(p.value_real) + '</td><td>' + fmtNum(p.delta_deg) + '</td><td>' + fmtDispMm(p.disp_mm) + '</td><td>' + (p.angular_gradient != null ? p.angular_gradient : '') + '</td>' + remarkMarkup(lb, t0);
+        tb.appendChild(tr);
+      }
+    } else if (single && inc0) {
+      var cmapIncCh = maps[0];
+      for (let ii = 0; ii < cap; ii++) {
+        var lbIc = labelsFull[ii];
+        var pic = cmapIncCh[lbIc];
+        if (!pic) continue;
+        const trIc = document.createElement('tr');
+        trIc.innerHTML = '<td>' + (ii + 1) + '</td><td>' + lbIc + '</td><td>' + (pic.value_real != null ? fmtNum(pic.value_real) : '—') + '</td><td>' + fmtMmDeltaCell(pic.disp_mm) + '</td>' + remarkMarkup(lbIc, t0);
+        tb.appendChild(trIc);
+      }
+    } else if (single && crack0) {
+      var cmapCr = maps[0];
+      for (let i = 0; i < cap; i++) {
+        var lbCr = labelsFull[i];
+        var pc = cmapCr[lbCr];
+        if (!pc) continue;
+        const trc = document.createElement('tr');
+        trc.innerHTML = '<td>' + (i + 1) + '</td><td>' + lbCr + '</td><td>' + (pc.value_raw != null ? fmtNum(pc.value_raw) : '—') + '</td><td>' + fmtMmCell(pc.crack_read_mm) + '</td><td>' + fmtMmDeltaCell(pc.crack_delta_prev_mm) + '</td><td>' + fmtMmDeltaCell(pc.crack_cumulative_mm) + '</td>' + remarkMarkup(lbCr, t0);
+        tb.appendChild(trc);
+      }
+    } else if (single && flow0) {
+      var cmapFl = maps[0];
+      for (let i = 0; i < cap; i++) {
+        var lbFl = labelsFull[i];
+        var pf = cmapFl[lbFl];
+        if (!pf) continue;
+        const trf = document.createElement('tr');
+        trf.innerHTML = '<td>' + (i + 1) + '</td><td>' + lbFl + '</td><td>' + fmtM3Cell(pf.flow_qty_m3) + '</td><td>' + fmtM3DeltaCell(pf.flow_delta_prev_m3) + '</td><td>' + fmtM3DeltaCell(pf.flow_delta_initial_m3) + '</td>' + remarkMarkup(lbFl, t0);
+        tb.appendChild(trf);
+      }
+    } else if (single && load0) {
+      var cmapLd = maps[0];
+      for (let i = 0; i < cap; i++) {
+        var lbLd = labelsFull[i];
+        var pl = cmapLd[lbLd];
+        if (!pl) continue;
+        const trl = document.createElement('tr');
+        trl.innerHTML = '<td>' + (i + 1) + '</td><td>' + lbLd + '</td><td>' + (pl.value_raw != null ? fmtNum(pl.value_raw) : '—') + '</td><td>' + (pl.load_ton != null ? fmtNum(pl.load_ton) : (pl.value_real != null ? fmtNum(pl.value_real) : '—')) + '</td><td>' + fmtGwDeltaCell(pl.load_delta_prev_ton) + '</td><td>' + fmtGwDeltaCell(pl.load_delta_initial_ton) + '</td>' + remarkMarkup(lbLd, t0);
+        tb.appendChild(trl);
+      }
+    } else if (single && ss0) {
+      var cmapSs = maps[0];
+      for (let i = 0; i < cap; i++) {
+        var lbSs = labelsFull[i];
+        var ps = cmapSs[lbSs];
+        if (!ps) continue;
+        const trs = document.createElement('tr');
+        trs.innerHTML = '<td>' + (i + 1) + '</td><td>' + lbSs + '</td><td>' + (ps.ss_read_v != null ? fmtNum(ps.ss_read_v) : '—') + '</td><td>' + (ps.ss_read_mm != null ? fmtNum(ps.ss_read_mm) : '—') + '</td><td>' + fmtGwDeltaCell(ps.ss_delta_prev_mm) + '</td><td>' + fmtGwDeltaCell(ps.ss_delta_initial_mm) + '</td>' + remarkMarkup(lbSs, t0);
+        tb.appendChild(trs);
+      }
+    } else if (gwSingle) {
+      var cmapGw = maps[0];
+      for (let i = 0; i < cap; i++) {
+        var lbGw = labelsFull[i];
+        var pgw = cmapGw[lbGw];
+        if (!pgw) continue;
+        const trg = document.createElement('tr');
+        var vRead = (pgw.gw_read_v != null && pgw.gw_read_v !== undefined) ? pgw.gw_read_v : (pgw.value_raw != null && pgw.value_raw !== undefined ? pgw.value_raw : pgw.value_step_1);
+        var vGl = (pgw.gw_gl_m != null && pgw.gw_gl_m !== undefined) ? pgw.gw_gl_m : pgw.value_real;
+        trg.innerHTML = '<td>' + (i + 1) + '</td><td>' + lbGw + '</td><td>' + (vRead != null && vRead !== '' && !Number.isNaN(Number(vRead)) ? fmtNum(vRead) : '—') + '</td><td>' + (vGl != null && vGl !== '' && !Number.isNaN(Number(vGl)) ? fmtNum(vGl) : '—') + '</td><td>' + fmtGwMagCell(pgw.gw_change_mag_m) + '</td><td>' + fmtGwDeltaCell(pgw.gw_delta_prev_m) + '</td><td>' + fmtGwDeltaCell(pgw.gw_delta_initial_m) + '</td>' + remarkMarkup(lbGw, t0);
+        tb.appendChild(trg);
+      }
+    } else if (single && !tilt0 && !inc0 && !vibScalarSingle && !gwSingle && !loadSingle && !ssSingle) {
+      var cmapN = maps[0];
+      for (let i = 0; i < cap; i++) {
+        var lb2 = labelsFull[i];
+        var p2 = cmapN[lb2];
+        if (!p2) continue;
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + lb2 + '</td><td>' + (p2.value_real != null ? fmtNum(p2.value_real) : '') + '</td>' + remarkMarkup(lb2, t0);
+        tb.appendChild(tr);
+      }
+    } else if (allTiltMulti) {
+      for (var ri = 0; ri < cap; ri++) {
+        var lbM = labelsFull[ri];
+        var trM = document.createElement('tr');
+        var h = '<td>' + (ri + 1) + '</td><td>' + lbM + '</td>';
+        for (var cj = 0; cj < chans.length; cj++) {
+          var pm = maps[cj][lbM];
+          if (!pm) h += '<td></td><td></td><td></td><td></td>';
+          else {
+            h += '<td>' + fmtByCh2(chans[cj], pm.value_real) + '</td><td>' + fmtByCh2(chans[cj], pm.delta_deg) + '</td><td>' + fmtDispMm(pm.disp_mm) + '</td><td>' + (pm.angular_gradient != null ? pm.angular_gradient : '') + '</td>';
+          }
+        }
+        h += remarkMarkup(lbM, t0);
+        trM.innerHTML = h;
+        tb.appendChild(trM);
+      }
+    } else if (allIncMulti) {
+      for (var rinc = 0; rinc < cap; rinc++) {
+        var lbIm = labelsFull[rinc];
+        var trIm = document.createElement('tr');
+        var hIm = '<td>' + (rinc + 1) + '</td><td>' + lbIm + '</td>';
+        for (var cim = 0; cim < chans.length; cim++) {
+          var pim = maps[cim][lbIm];
+          if (!pim) hIm += '<td>—</td><td>—</td>';
+          else {
+            hIm += '<td>' + fmtByCh2(chans[cim], pim.value_real) + '</td><td>' + fmtMmDeltaCell(pim.disp_mm) + '</td>';
+          }
+        }
+        hIm += remarkMarkup(lbIm, t0);
+        trIm.innerHTML = hIm;
+        tb.appendChild(trIm);
+      }
+    } else {
+      for (var ri2 = 0; ri2 < cap; ri2++) {
+        var lbX = labelsFull[ri2];
+        var trX = document.createElement('tr');
+        var hx = '<td>' + (ri2 + 1) + '</td><td>' + lbX + '</td>';
+        for (var ck = 0; ck < chans.length; ck++) {
+          var pk = maps[ck][lbX];
+          if (!pk) hx += '<td></td>';
+          else if (chans[ck].tilt_table) hx += '<td>' + fmtDispMm(pk.disp_mm) + '</td>';
+          else if (chans[ck].inclinometer_table) hx += '<td>' + fmtMmDeltaCell(pk.disp_mm) + '</td>';
+          else if (chans[ck].crack_table) hx += '<td>' + fmtMmCell(pk.crack_read_mm) + '</td>';
+          else if (chans[ck].flow_table) hx += '<td>' + fmtM3Cell(pk.flow_qty_m3) + '</td>';
+          else if (chans[ck].groundwater_table) {
+            var ggl = (pk.gw_gl_m != null && pk.gw_gl_m !== undefined) ? pk.gw_gl_m : pk.value_real;
+            hx += '<td>' + fmtByCh2(chans[ck], ggl) + '</td>';
+          } else hx += '<td>' + fmtByCh2(chans[ck], pk.value_real) + '</td>';
+        }
+        hx += remarkMarkup(lbX, t0);
+        trX.innerHTML = hx;
+        tb.appendChild(trX);
+      }
+    }
+  }
+
+  document.getElementById('btn-load').addEventListener('click', loadSeries);
+  var btnPurge = document.getElementById('btn-purge-period');
+  if (btnPurge) btnPurge.addEventListener('click', purgePeriodMeasurements);
+  loadSeries();
+  } catch (e) {
+    const msg = (e && e.message) ? e.message : String(e);
+    if (st0) st0.textContent = '차트 스크립트 오류: ' + msg;
+  }
+})();
+</script>
+{% endblock %}

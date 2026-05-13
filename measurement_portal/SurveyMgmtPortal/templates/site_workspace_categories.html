@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}카테고리 — {{ site.name }}{% endblock %}
+{% block body_class %}page-app{% endblock %}
+
+{% block body %}
+{% include "partials/app_header.html" %}
+<div class="container-fluid py-4">
+  <div class="row justify-content-center">
+    <div class="col-12">
+      {% include "partials/app_flash.html" %}
+
+      <div class="d-flex flex-column flex-sm-row align-items-start align-items-sm-center justify-content-between gap-2 mb-3">
+        <div>
+          <h4 class="mb-1 fw-bold">카테고리 편집</h4>
+          <div class="text-secondary small">{{ site.name }} · 대분류/소분류를 만든 뒤 센서를 선택해서 등록하세요.</div>
+        </div>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('site_workspace', site_id=site.id) }}">워크스페이스</a>
+      </div>
+
+      <div class="row g-4">
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="card h-100 shadow-sm">
+            <div class="card-header bg-white">
+              <div class="fw-semibold">대분류</div>
+              <div class="text-secondary small">현장 기준 대분류 목록</div>
+            </div>
+            <div class="card-body">
+              <form method="post" class="mb-3">
+                <div class="input-group">
+                  <input type="hidden" name="action" value="add_major"/>
+                  <input type="text" name="major_name" class="form-control" placeholder="대분류명" autocomplete="off"/>
+                  <button class="btn btn-primary" type="submit">추가</button>
+                </div>
+              </form>
+
+              <div class="d-flex justify-content-end gap-2 mb-3">
+                <form method="post">
+                  <input type="hidden" name="action" value="move_major"/>
+                  <input type="hidden" name="major_id" value="{{ selected_major.id if selected_major else '' }}"/>
+                  <button class="btn btn-outline-secondary btn-sm" type="submit" name="direction" value="up" {% if not selected_major %}disabled{% endif %}>위</button>
+                </form>
+                <form method="post">
+                  <input type="hidden" name="action" value="move_major"/>
+                  <input type="hidden" name="major_id" value="{{ selected_major.id if selected_major else '' }}"/>
+                  <button class="btn btn-outline-secondary btn-sm" type="submit" name="direction" value="down" {% if not selected_major %}disabled{% endif %}>아래</button>
+                </form>
+                <form method="post">
+                  <input type="hidden" name="action" value="delete_major"/>
+                  <input type="hidden" name="major_id" value="{{ selected_major.id if selected_major else '' }}"/>
+                  <button class="btn btn-outline-danger btn-sm" type="submit" {% if not selected_major %}disabled{% endif %}
+                          onclick="return confirm('선택한 대분류와 하위 소분류를 삭제할까요?');">삭제</button>
+                </form>
+              </div>
+
+              <div class="list-group overflow-auto" style="max-height: 420px;">
+                {% for g in majors %}
+                <a href="{{ url_for('site_workspace_categories', site_id=site.id, major_id=g.id) }}"
+                   class="list-group-item list-group-item-action {% if selected_major and selected_major.id==g.id %}active fw-semibold{% endif %}">
+                  {{ g.name }}
+                </a>
+                {% else %}
+                <div class="list-group-item text-muted text-center py-4">대분류가 없습니다.</div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="card h-100 shadow-sm">
+            <div class="card-header bg-white">
+              <div class="fw-semibold">소분류</div>
+              <div class="text-secondary small">선택한 대분류의 하위 목록</div>
+            </div>
+            <div class="card-body">
+              <form method="post" class="mb-3">
+                <div class="input-group">
+                  <input type="hidden" name="action" value="add_minor"/>
+                  <input type="hidden" name="major_id" value="{{ selected_major.id if selected_major else '' }}"/>
+                  <input type="text" name="minor_name" class="form-control" placeholder="소분류명" autocomplete="off" {% if not selected_major %}disabled{% endif %}/>
+                  <button class="btn btn-primary" type="submit" {% if not selected_major %}disabled{% endif %}>추가</button>
+                </div>
+              </form>
+
+              <div class="d-flex justify-content-end gap-2 mb-3">
+                <form method="post">
+                  <input type="hidden" name="action" value="move_minor"/>
+                  <input type="hidden" name="major_id" value="{{ selected_major.id if selected_major else '' }}"/>
+                  <input type="hidden" name="minor_id" value="{{ selected_minor.id if selected_minor else '' }}"/>
+                  <button class="btn btn-outline-secondary btn-sm" type="submit" name="direction" value="up" {% if not selected_minor %}disabled{% endif %}>위</button>
+                </form>
+                <form method="post">
+                  <input type="hidden" name="action" value="move_minor"/>
+                  <input type="hidden" name="major_id" value="{{ selected_major.id if selected_major else '' }}"/>
+                  <input type="hidden" name="minor_id" value="{{ selected_minor.id if selected_minor else '' }}"/>
+                  <button class="btn btn-outline-secondary btn-sm" type="submit" name="direction" value="down" {% if not selected_minor %}disabled{% endif %}>아래</button>
+                </form>
+                <form method="post">
+                  <input type="hidden" name="action" value="delete_minor"/>
+                  <input type="hidden" name="major_id" value="{{ selected_major.id if selected_major else '' }}"/>
+                  <input type="hidden" name="minor_id" value="{{ selected_minor.id if selected_minor else '' }}"/>
+                  <button class="btn btn-outline-danger btn-sm" type="submit" {% if not selected_minor %}disabled{% endif %}
+                          onclick="return confirm('선택한 소분류를 삭제할까요?');">삭제</button>
+                </form>
+              </div>
+
+              <div class="list-group overflow-auto" style="max-height: 420px;">
+                {% for g in minors %}
+                <a href="{{ url_for('site_workspace_categories', site_id=site.id, major_id=(selected_major.id if selected_major else None), minor_id=g.id) }}"
+                   class="list-group-item list-group-item-action {% if selected_minor and selected_minor.id==g.id %}active fw-semibold{% endif %}">
+                  {{ g.name }}
+                </a>
+                {% else %}
+                <div class="list-group-item text-muted text-center py-4">소분류가 없습니다.</div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="card h-100 shadow-sm">
+            <div class="card-header bg-white">
+              <div class="fw-semibold">등록된 센서</div>
+              <div class="text-secondary small">현재 소분류에 포함된 센서</div>
+            </div>
+            <div class="card-body">
+              <form method="post">
+                <input type="hidden" name="action" value="unassign"/>
+                <input type="hidden" name="major_id" value="{{ selected_major.id if selected_major else '' }}"/>
+                <input type="hidden" name="minor_id" value="{{ selected_minor.id if selected_minor else '' }}"/>
+
+                <div class="d-flex justify-content-end gap-2 mb-3">
+                  <button class="btn btn-outline-secondary btn-sm" type="button" disabled>위</button>
+                  <button class="btn btn-outline-secondary btn-sm" type="button" disabled>아래</button>
+                  <button class="btn btn-outline-secondary btn-sm" type="submit" {% if not selected_minor %}disabled{% endif %}>미등록</button>
+                </div>
+
+                <div class="list-group overflow-auto" style="max-height: 420px;">
+                  {% for ch in registered_channels %}
+                  <label class="list-group-item d-flex align-items-center gap-2">
+                    <input class="form-check-input m-0" type="checkbox" name="registered_channel_ids" value="{{ ch.id }}"/>
+                    <span class="text-truncate">{{ ch.sensor_code or ch.label }}</span>
+                  </label>
+                  {% else %}
+                  <div class="list-group-item text-muted text-center py-4">등록된 센서가 없습니다.</div>
+                  {% endfor %}
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="card h-100 shadow-sm">
+            <div class="card-header bg-white">
+              <div class="fw-semibold">등록 안된 센서</div>
+              <div class="text-secondary small">소분류에 아직 포함되지 않음</div>
+            </div>
+            <div class="card-body">
+              <form method="post">
+                <input type="hidden" name="action" value="assign"/>
+                <input type="hidden" name="major_id" value="{{ selected_major.id if selected_major else '' }}"/>
+                <input type="hidden" name="minor_id" value="{{ selected_minor.id if selected_minor else '' }}"/>
+
+                <div class="d-flex justify-content-end mb-3">
+                  <button class="btn btn-primary btn-sm" type="submit" {% if not selected_minor %}disabled{% endif %}>등록</button>
+                </div>
+
+                <div class="list-group overflow-auto" style="max-height: 420px;">
+                  {% for ch in unregistered_channels %}
+                  <label class="list-group-item d-flex align-items-center gap-2">
+                    <input class="form-check-input m-0" type="checkbox" name="unregistered_channel_ids" value="{{ ch.id }}"/>
+                    <span class="text-truncate">{{ ch.sensor_code or ch.label }}</span>
+                  </label>
+                  {% else %}
+                  <div class="list-group-item text-muted text-center py-4">등록 안된 센서가 없습니다.</div>
+                  {% endfor %}
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

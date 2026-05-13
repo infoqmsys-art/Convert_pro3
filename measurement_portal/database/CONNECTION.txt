@@ -1,0 +1,22 @@
+PostgreSQL (docker-compose 기본값)
+==================================
+
+DBeaver / DataGrip / psql 공통:
+
+  Host:     127.0.0.1
+  Port:     5432
+  Database: survey_portal
+  Username: survey
+  Password: survey_dev_change_me
+
+JDBC URL 예:
+  jdbc:postgresql://127.0.0.1:5432/survey_portal
+
+psql (컨테이너 안에서):
+  docker exec -it survey_portal_postgres psql -U survey -d survey_portal
+
+주의: 비밀번호는 로컬 개발용입니다. 운영 시 docker-compose.yml 의
+POSTGRES_PASSWORD 를 바꾸고, CONNECTION.txt 는 커밋하지 마세요.
+
+참고: Flask 포털(app.py)은 아직 SQLite(db.py)만 사용합니다.
+      이 Postgres는 "DB 서버 연습 / 향후 이관"용입니다.

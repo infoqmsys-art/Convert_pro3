@@ -1,0 +1,1545 @@
+{% extends "base.html" %}
+{% block title %}{{ site.name }} — 현장 워크스페이스{% endblock %}
+{% block body_class %}page-site-workspace{% endblock %}
+{% block body %}
+{% include "partials/app_header.html" %}
+
+<div class="sw-shell">
+  <aside class="sw-sidebar" aria-labelledby="sw-site-heading">
+    <div class="sw-sidebar-head">
+      <h2 id="sw-site-heading" class="sw-site-title">{{ site.name }}</h2>
+      <p class="sw-site-meta">마지막 표시 시각 {{ ws_updated }} <span class="sw-site-code">코드 {{ site.site_code or '—' }}</span></p>
+      <div class="sw-quick-grid">
+        <a href="{{ url_for('site_workspace_reports', site_id=site.id) }}" class="sw-btn sw-btn-report">
+          보고서
+          {% if report_badge_count and report_badge_count > 0 %}
+          <span class="sw-badge-count">{{ report_badge_count }}</span>
+          {% else %}
+          <span class="sw-badge-count sw-badge-count-zero">0</span>
+          {% endif %}
+        </a>
+        <div class="sw-btn-row">
+          <a href="{{ url_for('site_workspace_site_settings', site_id=site.id) }}" class="sw-btn sw-btn-half sw-btn-strong">현장설정</a>
+          <a href="{{ url_for('site_workspace_sensor_settings', site_id=site.id) }}" class="sw-btn sw-btn-half">센서설정</a>
+        </div>
+        <a href="{{ url_for('site_workspace_categories', site_id=site.id) }}" class="sw-btn sw-btn-wide">카테고리</a>
+      </div>
+    </div>
+
+    <div class="sw-tree-wrap">
+      <h3 class="sw-tree-title">계측기 리스트</h3>
+      <p class="sw-tree-note">카테고리에 등록된 센서만 표시됩니다. 센서를 추가했다면 「카테고리」에서 대분류·소분류를 만든 뒤 센서를 등록하세요.</p>
+
+      {% if ws_tree_roots %}
+      <div class="sw-tree-root">
+        {% macro render_channel_row(ch) -%}
+          <a href="{{ url_for('site_workspace', site_id=site.id, channel_id=ch.id) }}"
+             class="sw-channel-li sw-channel-link{% if ws_channel and ws_channel.id == ch.id %} is-active{% endif %}{% if not ch.is_active %} is-inactive{% endif %}">
+            <span class="sw-ch-label">{{ ch|sns_ch_tree }}</span>
+            <span class="sw-ch-meta">
+              {% set st = ch.logger_status or '' %}
+              {% if st == 'normal' %}<span class="sw-mini-badge sw-mini-ok">안정</span>
+              {% elif st == 'delayed' %}<span class="sw-mini-badge sw-mini-warn">지연</span>
+              {% elif st %}<span class="sw-mini-badge">{{ st }}</span>
+              {% else %}<span class="sw-mini-badge">—</span>{% endif %}
+              <span class="sw-ch-val">—</span>
+              <span class="sw-ch-unit">{{ ch.unit or '—' }}</span>
+            </span>
+            <span class="sw-ch-logger">{{ ch.logger_name }}</span>
+          </a>
+        {%- endmacro %}
+
+        {% macro render_ws_node(nodes) -%}
+          {%- for node in nodes -%}
+          <details class="sw-tree-details" open>
+            <summary class="sw-tree-sum">{{ node.group.name }}</summary>
+            <div class="sw-tree-inner">
+              {% if node.children %}
+              <div class="sw-tree-sub">
+                {{- render_ws_node(node.children) -}}
+              </div>
+              {% endif %}
+              {% if node.channels %}
+              <div class="sw-channel-list">
+                {% for ch in node.channels %}
+                  {{ render_channel_row(ch) }}
+                {% endfor %}
+              </div>
+              {% endif %}
+              {% if not node.channels and not node.children %}
+              <p class="sw-empty-sub">항목 없음</p>
+              {% endif %}
+            </div>
+          </details>
+          {%- endfor -%}
+        {%- endmacro %}
+
+        {{ render_ws_node(ws_tree_roots) }}
+      </div>
+      {% else %}
+      <p class="sw-tree-empty">등록된 카테고리·계측기가 없습니다. 「센서설정」에서 센서를 추가한 뒤 「카테고리」에서 등록하면 이곳에 나타납니다.</p>
+      {% endif %}
+    </div>
+
+    <footer class="sw-foot">
+      <span>{{ username }}</span>
+      <a href="{{ url_for('logout') }}">Logout</a>
+    </footer>
+  </aside>
+
+  <main class="sw-stage">
+    {% if ws_channel %}
+    <div class="sw-stage-data">
+
+      <!-- ── 컴팩트 컨트롤 바 ───────────────────────────────────────── -->
+      <div class="sw-ws-bar">
+        <div class="sw-ws-bar-r1">
+          <h2 class="sw-ws-name">
+            <span class="sw-ws-kind">{{ ws_kind_label }}</span>
+            <span class="sw-ws-code">{{ ws_channel.sensor_code or '—' }}</span>
+            {% if ws_channel.linked_sensor_codes %}<span class="sw-ws-linked">연결: {{ ws_channel.linked_sensor_codes }}</span>{% endif %}
+          </h2>
+          <label class="sw-ws-axis-label">축 범위
+            <input type="number" step="any" id="ws-y-min" class="sw-ws-num" placeholder="자동">
+            <span class="sw-ws-tilde">~</span>
+            <input type="number" step="any" id="ws-y-max" class="sw-ws-num" placeholder="자동">
+          </label>
+          <div class="sw-ws-btns">
+            <a class="sw-ws-btn-link" href="{{ url_for('site_workspace_sensor_settings', site_id=site.id, logger_id=ws_channel.logger_device_id, channel_id=ws_channel.id) }}">센서설정</a>
+            <a class="sw-ws-btn-link" href="{{ url_for('legacy.channel_chart', channel_id=ws_channel.id) }}">{% if ws_inclinometer_chart %}개별센서확인{% else %}전체화면{% endif %}</a>
+          </div>
+        </div>
+        <div class="sw-ws-bar-r2">
+          <label class="sw-ws-dt-lbl">시작일 <input type="datetime-local" id="ws-t-from" class="sw-ws-dt"></label>
+          <label class="sw-ws-dt-lbl">종료일 <input type="datetime-local" id="ws-t-to" class="sw-ws-dt"></label>
+          <button type="button" class="sw-ws-btn-primary" id="ws-btn-load">기간조회</button>
+          <span id="ws-chart-status" class="sw-ws-status">준비됨</span>
+          <button type="button" class="sw-ws-btn-danger" id="ws-btn-purge-period"
+            title="조회 구간 측정 데이터 삭제"
+            {% if not ws_can_purge %}disabled{% endif %}>검색데이터삭제</button>
+        </div>
+      </div>
+
+      <!-- ── 메인 시계열 차트 (지중경사계는 숨김) ──────────────────── -->
+      <div class="sw-chart-wrap"{% if ws_inclinometer_chart %} style="display:none"{% endif %}>
+        <canvas id="ws-chart-ts" height="160"></canvas>
+        <p id="ws-minmax-line" class="sw-minmax-line" aria-live="polite"></p>
+      </div>
+
+      <!-- ── 지중경사계: 프로파일(좌) + 표(우) 분할 ─────────────────── -->
+      {% if ws_inclinometer_chart %}
+      <div class="sw-inc-split">
+        <div class="sw-inc-left" id="ws-profile-wrap" style="display:none">
+          <div class="sw-inc-slider-row">
+            <span class="sw-inc-slider-lbl">시각</span>
+            <input type="range" id="ws-profile-time" min="0" max="0" value="0" class="sw-inc-slider">
+            <span id="ws-profile-time-label" class="sw-inc-time-lbl">—</span>
+          </div>
+          <div class="sw-inc-canvas-wrap">
+            <canvas id="ws-chart-profile"></canvas>
+          </div>
+        </div>
+        <div class="sw-inc-right">
+          <p id="ws-tbl-hint" class="sw-tbl-hint" style="display:none"></p>
+          <p id="ws-tbl-initial-ref" class="sw-tbl-initial-ref" style="display:none" aria-live="polite"></p>
+          <div class="sw-table-scroll">
+            <table class="sw-data-table" id="ws-tbl-points">
+              <thead id="ws-tbl-thead"></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <!-- ── 일반 센서: 표 전체 폭 ─────────────────────────────────── -->
+      <div class="sw-chart-wrap">
+        <p id="ws-tbl-hint" class="sw-tbl-hint" style="display:none"></p>
+        <p id="ws-tbl-initial-ref" class="sw-tbl-initial-ref" style="display:none" aria-live="polite"></p>
+        <div class="sw-table-scroll">
+          <table class="sw-data-table" id="ws-tbl-points">
+            <thead id="ws-tbl-thead"></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+    {% else %}
+    <div class="sw-stage-placeholder">
+      <p class="sw-stage-title">도면 표시 영역</p>
+      <p class="sw-stage-muted">왼쪽 <strong>계측기 리스트</strong>에서 센서를 선택하면 이곳에 시계열·표가 표시됩니다. 현장설정 메뉴에서 도면 배치는 추후 연결됩니다.</p>
+      <div class="sw-placeholder-panels">
+        <div class="sw-ph-panel"><span>#구간 예시</span></div>
+        <div class="sw-ph-panel"><span>#구간 예시</span></div>
+      </div>
+    </div>
+    {% endif %}
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if ws_channel %}
+<script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
+<script>
+(function () {
+  const st0 = document.getElementById('ws-chart-status');
+
+  /* 전역 에러/미처리 Promise 거절을 상태박스에 표시 */
+  window.addEventListener('error', function(e) {
+    console.error('[ws-error]', e.message, e.filename, e.lineno);
+    if (st0) { st0.style.color = '#dc2626'; st0.style.fontWeight = 'bold'; st0.textContent = '[JS오류] ' + (e.message || String(e)); }
+  });
+  window.addEventListener('unhandledrejection', function(e) {
+    console.error('[ws-unhandled]', e.reason);
+    if (st0) { st0.style.color = '#dc2626'; st0.style.fontWeight = 'bold'; st0.textContent = '[비동기오류] ' + ((e.reason && e.reason.message) ? e.reason.message : String(e.reason)); }
+  });
+
+  console.log('[ws] 스크립트 시작 - Chart.js 로드 상태:', !!window.Chart);
+
+  try {
+    if (!window.Chart) {
+      if (st0) { st0.style.color = '#dc2626'; st0.style.fontWeight = 'bold'; st0.textContent = '차트 라이브러리(Chart.js) 로드 실패: 네트워크/CDN 차단 가능성이 있습니다.'; }
+      console.error('[ws] Chart.js 없음!');
+      return;
+    }
+
+  const channelId = {{ ws_channel.id | tojson }};
+  const unit = {{ (ws_channel.unit or '') | tojson }};
+  const autoName = {{ (ws_channel|sns_ch_auto_name)|tojson }};
+  const decimalPlaces = {{ ws_channel.decimal_places | default(2) | int | tojson }};
+  const chartYMinSaved = {{ (ws_channel.chart_y_min if ws_channel.chart_y_min is not none else none) | tojson }};
+  const chartYMaxSaved = {{ (ws_channel.chart_y_max if ws_channel.chart_y_max is not none else none) | tojson }};
+  const chartYMinEff = {{ ws_chart_y_min_eff | tojson }};
+  const chartYMaxEff = {{ ws_chart_y_max_eff | tojson }};
+  const wsFlowChart = {{ ws_flow_chart | tojson }};
+  const wsGroundwaterChart = {{ ws_groundwater_chart | tojson }};
+  const wsInclinometerChart = {{ ws_inclinometer_chart | tojson }};
+  const wsSegLenMm = {{ (ws_channel.sensor_length_mm if ws_channel and ws_channel.sensor_length_mm else 1000) | float | tojson }};
+  const wsVibration3Axis = {{ ws_vibration_3axis | tojson }};
+  const wsVibrationScalarPvs = {{ ws_vibration_scalar_pvs | tojson }};
+  const wsMgmtLevels = {{ ws_mgmt_levels | tojson }};
+  const wsLatestObserved = {{ (ws_latest_observed or '') | tojson }};
+  let wsLastLabelCount = 0;
+
+  if (channelId === null || channelId === undefined) {
+    if (st0) st0.textContent = '차트 초기화 실패: 채널 ID가 없습니다.';
+    return;
+  }
+
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function toLocalDatetimeValue(d) {
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function fmtVal(v) {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+    return Number(v).toFixed(decimalPlaces);
+  }
+  function fmtDelta(v) {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+    var s = Number(v).toFixed(decimalPlaces);
+    if (Number(v) > 0) return '+' + s;
+    return s;
+  }
+  function fmtGwMag(v) {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+    return Number(Math.abs(Number(v))).toFixed(decimalPlaces);
+  }
+  function fmtDispMm(v) {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+    return Number(v).toFixed(3);
+  }
+  function fmtDeltaMm(v) {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+    var n = Number(v);
+    var s = n.toFixed(3);
+    if (n > 0) return '+' + s;
+    return s;
+  }
+  function fmtM3Cell(v) {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+    return Number(v).toFixed(2);
+  }
+  function fmtDeltaM3(v) {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+    var n = Number(v);
+    var s = n.toFixed(2);
+    if (n > 0) return '+' + s;
+    return s;
+  }
+
+  let now = new Date();
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const elFrom = document.getElementById('ws-t-from');
+  const elTo = document.getElementById('ws-t-to');
+  const elYMin = document.getElementById('ws-y-min');
+  const elYMax = document.getElementById('ws-y-max');
+  const elMinMax = document.getElementById('ws-minmax-line');
+
+  if (elFrom) elFrom.value = toLocalDatetimeValue(weekAgo);
+  if (elTo) elTo.value = toLocalDatetimeValue(now);
+  if (elYMin) {
+    if (chartYMinSaved !== null) elYMin.value = String(chartYMinSaved);
+    else if ((wsFlowChart || wsGroundwaterChart || wsInclinometerChart) && chartYMinEff != null && Number.isFinite(Number(chartYMinEff))) elYMin.value = String(chartYMinEff);
+  }
+  if (elYMax) {
+    if (chartYMaxSaved !== null) elYMax.value = String(chartYMaxSaved);
+    else if ((wsFlowChart || wsGroundwaterChart || wsInclinometerChart) && chartYMaxEff != null && Number.isFinite(Number(chartYMaxEff))) elYMax.value = String(chartYMaxEff);
+  }
+
+  const ctx = document.getElementById('ws-chart-ts').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: (unit && unit.length) ? (autoName + ' (' + unit + ')') : autoName,
+        data: [],
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37,99,235,0.12)',
+        tension: 0.15,
+        pointRadius: 0,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 2.1,
+      scales: {
+        x: { ticks: { maxRotation: 0, color: '#64748b' }, grid: { color: 'rgba(148,163,184,0.25)' } },
+        y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(148,163,184,0.25)' } }
+      },
+      plugins: { legend: { labels: { color: '#475569' } } }
+    }
+  });
+
+  const elProfileWrap = document.getElementById('ws-profile-wrap');
+  const elProfileTime = document.getElementById('ws-profile-time');
+  const elProfileCanvas = document.getElementById('ws-chart-profile');
+  let profileChart = null;
+
+  function ensureProfileChart() {
+    if (!elProfileCanvas) return null;
+    if (profileChart) { profileChart.destroy(); profileChart = null; }
+    const pctx = elProfileCanvas.getContext('2d');
+    profileChart = new Chart(pctx, {
+      type: 'scatter',
+      data: {
+        datasets: [
+          {
+            label: '초기(기준선)',
+            data: [],
+            borderColor: '#0f172a',
+            borderDash: [8, 5],
+            backgroundColor: 'transparent',
+            showLine: true,
+            pointRadius: 0,
+            borderWidth: 2,
+            order: 10,
+          },
+          {
+            label: '누적변위(mm)',
+            data: [],
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37,99,235,0.75)',
+            showLine: true,
+            tension: 0.1,
+            pointRadius: 5,
+            borderWidth: 2,
+            order: 0,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            position: 'top',
+            title: { display: true, text: 'Displacement (mm)', color: '#334155' },
+            ticks: { color: '#64748b' },
+            grid: { color: 'rgba(148,163,184,0.2)' },
+          },
+          y: {
+            /* 0 = 지표(위), 음수 방향으로 내려감 */
+            reverse: false,
+            max: 0,
+            title: { display: true, text: 'Depth (m)', color: '#334155' },
+            ticks: { color: '#64748b', callback: function(v) { return Number(v).toFixed(1); } },
+            grid: { color: 'rgba(148,163,184,0.2)' },
+          }
+        },
+        plugins: {
+          legend: { display: true, position: 'bottom', labels: { boxWidth: 14, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                return '깊이: ' + ctx.parsed.y.toFixed(1) + 'm · 누적변위: ' + ctx.parsed.x.toFixed(3) + 'mm';
+              }
+            }
+          }
+        }
+      }
+    });
+    return profileChart;
+  }
+
+  function applyYScaleFromInputs() {
+    var rawMin = elYMin && elYMin.value !== '' ? parseFloat(elYMin.value) : NaN;
+    var rawMax = elYMax && elYMax.value !== '' ? parseFloat(elYMax.value) : NaN;
+    if (Number.isFinite(rawMin)) chart.options.scales.y.min = rawMin;
+    else delete chart.options.scales.y.min;
+    if (Number.isFinite(rawMax)) chart.options.scales.y.max = rawMax;
+    else delete chart.options.scales.y.max;
+    chart.update();
+  }
+
+  if (elYMin) elYMin.addEventListener('change', applyYScaleFromInputs);
+  if (elYMax) elYMax.addEventListener('change', applyYScaleFromInputs);
+  applyYScaleFromInputs();
+
+  function fmtSqlLocal(dtLocalStr) {
+    if (!dtLocalStr) return null;
+    const d = new Date(dtLocalStr);
+    if (isNaN(d.getTime())) return null;
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':00';
+  }
+
+  const purgeUrl = {{ url_for('legacy.api_measurements_purge') | tojson }};
+  const bundleUrl = {{ url_for('legacy.api_measurement_series_bundle') | tojson }};
+  const WS_COLORS = [
+    { b: '#2563eb', f: 'rgba(37,99,235,0.12)' },
+    { b: '#ea580c', f: 'rgba(234,88,12,0.12)' },
+    { b: '#16a34a', f: 'rgba(22,163,74,0.12)' },
+    { b: '#9333ea', f: 'rgba(147,51,234,0.12)' },
+  ];
+
+  function fmtByCh(ch, v) {
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+    var dp = (ch.decimal_places != null) ? parseInt(ch.decimal_places, 10) : decimalPlaces;
+    if (!Number.isFinite(dp)) dp = decimalPlaces;
+    return Number(v).toFixed(dp);
+  }
+
+  function buildPointMaps(chans) {
+    return chans.map(function (ch) {
+      var m = {};
+      (ch.points || []).forEach(function (p) {
+        var t = (p.observed_at || '').replace('T', ' ').slice(0, 19);
+        if (t) m[t] = p;
+      });
+      return m;
+    });
+  }
+
+  function primaryInitialTimeKey(chans) {
+    if (!chans || !chans.length) return null;
+    var pts = chans[0].points || [];
+    var crack = !!chans[0].crack_table;
+    var flow = !!chans[0].flow_table;
+    var gw = !!chans[0].groundwater_table;
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i];
+      if (crack) {
+        var mm = p.crack_read_mm;
+        if (mm !== null && mm !== undefined && !Number.isNaN(Number(mm))) {
+          return (p.observed_at || '').replace('T', ' ').slice(0, 19);
+        }
+        continue;
+      }
+      if (flow) {
+        var fq = p.flow_qty_m3;
+        if (fq !== null && fq !== undefined && !Number.isNaN(Number(fq))) {
+          return (p.observed_at || '').replace('T', ' ').slice(0, 19);
+        }
+        continue;
+      }
+      if (gw) {
+        var vg = p.gw_gl_m;
+        if (vg !== null && vg !== undefined && !Number.isNaN(Number(vg))) {
+          return (p.observed_at || '').replace('T', ' ').slice(0, 19);
+        }
+        continue;
+      }
+      var vr = p.value_real;
+      if (vr !== null && vr !== undefined && !Number.isNaN(Number(vr))) {
+        return (p.observed_at || '').replace('T', ' ').slice(0, 19);
+      }
+    }
+    return null;
+  }
+
+  function remarkMarkup(lb, t0) {
+    if (t0 && lb === t0) return '<td><strong>초기치</strong></td>';
+    return '<td></td>';
+  }
+
+  function mergedTimeLabels(chans) {
+    var set = {};
+    chans.forEach(function (ch) {
+      (ch.points || []).forEach(function (p) {
+        var t = (p.observed_at || '').replace('T', ' ').slice(0, 19);
+        if (t) set[t] = true;
+      });
+    });
+    return Object.keys(set).sort();
+  }
+
+  function syncChartDatasetCount(n) {
+    while (chart.data.datasets.length < n) {
+      var i = chart.data.datasets.length;
+      var col = WS_COLORS[i % WS_COLORS.length];
+      chart.data.datasets.push({
+        label: '',
+        data: [],
+        borderColor: col.b,
+        backgroundColor: col.f,
+        tension: 0.15,
+        pointRadius: 0,
+        borderWidth: 2,
+      });
+    }
+    while (chart.data.datasets.length > n) {
+      chart.data.datasets.pop();
+    }
+  }
+
+  function applyPointRadiiAll() {
+    chart.data.datasets.forEach(function (ds) {
+      ds.pointRadius = 0;
+      ds.pointHoverRadius = 0;
+    });
+  }
+
+  /** 센서설정 1·2·3차 관리기준 주·보조 수평선(보조는 동일 단계 주와 같은 색). 유량계는 생략. */
+  function appendMgmtThresholdDatasets(labelsFull) {
+    if (wsFlowChart) return;
+    if (!labelsFull || !labelsFull.length || !wsMgmtLevels) return;
+    var pairs = [
+      { pri: 'level1_primary', sec: 'level1_secondary', labelPri: '1차관리(주)', labelSec: '1차관리(보조)', color: '#84cc16' },
+      { pri: 'level2_primary', sec: 'level2_secondary', labelPri: '2차관리(주)', labelSec: '2차관리(보조)', color: '#eab308' },
+      { pri: 'level3_primary', sec: 'level3_secondary', labelPri: '3차관리(주)', labelSec: '3차관리(보조)', color: '#dc2626' },
+    ];
+    pairs.forEach(function (pair) {
+      [
+        { key: pair.pri, label: pair.labelPri },
+        { key: pair.sec, label: pair.labelSec },
+      ].forEach(function (spec) {
+        var raw = wsMgmtLevels[spec.key];
+        if (raw === null || raw === undefined) return;
+        var y = Number(raw);
+        if (!Number.isFinite(y)) return;
+        chart.data.datasets.push({
+          _ws_mgmt_line: true,
+          label: spec.label,
+          data: labelsFull.map(function () { return y; }),
+          borderColor: pair.color,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          borderWidth: 2,
+          fill: false,
+          tension: 0,
+        });
+      });
+    });
+  }
+
+  async function purgePeriodMeasurements() {
+    const st = document.getElementById('ws-chart-status') || st0;
+    const from = fmtSqlLocal(elFrom && elFrom.value);
+    const to = fmtSqlLocal(elTo && elTo.value);
+    if (!from || !to) {
+      if (st) st.textContent = '삭제하려면 시작·종료 시각을 모두 지정하세요.';
+      return;
+    }
+    var msg = '선택한 구간의 측정 데이터를 DB에서 삭제할까요?\n\n' + from + ' ~ ' + to + '\n\n이 작업은 되돌릴 수 없습니다.';
+    if (!window.confirm(msg)) return;
+    if (st) st.textContent = '삭제 중…';
+    var res, data;
+    try {
+      res = await fetch(purgeUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          sensor_channel_id: channelId,
+          time_from: from,
+          time_to: to,
+          note: 'site_workspace: 검색데이터삭제'
+        })
+      });
+      data = await res.json();
+    } catch (e) {
+      if (st) st.textContent = '삭제 요청 실패 (네트워크)';
+      return;
+    }
+    if (!res.ok) {
+      if (st) st.textContent = data.error || '삭제 실패';
+      return;
+    }
+    if (st) st.textContent = '삭제 완료: ' + (data.deleted != null ? data.deleted : 0) + '행. 목록을 다시 불러옵니다.';
+    await loadSeries();
+  }
+
+  async function loadSeries() {
+    const st = document.getElementById('ws-chart-status') || st0;
+    const from = fmtSqlLocal(elFrom && elFrom.value);
+    const to = fmtSqlLocal(elTo && elTo.value);
+    const params = new URLSearchParams({ sensor_channel_id: String(channelId), limit: '5000' });
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    console.log('[ws] loadSeries 시작 channelId=' + channelId + ' from=' + (from||'없음') + ' to=' + (to||'없음'));
+    if (st) st.textContent = '불러오는 중…';
+    if (elMinMax) elMinMax.textContent = '';
+    let res, bundle;
+    try {
+      res = await fetch(bundleUrl + '?' + params.toString(), { credentials: 'same-origin' });
+      try {
+        bundle = await res.json();
+      } catch (e) {
+        bundle = null;
+      }
+    } catch (e) {
+      st.textContent = '불러오기 실패 (네트워크)';
+      return;
+    }
+    if (!bundle) {
+      if (st) st.textContent = '불러오기 실패 (세션 만료/JSON 오류 가능).';
+      return;
+    }
+    if (!res.ok) {
+      if (st) st.textContent = bundle.error || '오류';
+      return;
+    }
+    var chans = bundle.channels || [];
+    console.log('[ws] 응답 완료: ' + chans.length + '개 채널, chans[0].points=' + (chans[0] && chans[0].points ? chans[0].points.length : 0));
+    var miss = bundle.missing_linked_codes || [];
+    var vbMeta = bundle.vibration_3axis || null;
+    var vibm3Pts = (vbMeta && vbMeta.points && vbMeta.points.length > 0) ? vbMeta.points : null;
+    var labelsFull = mergedTimeLabels(chans);
+    wsLastLabelCount = labelsFull.length;
+    var maps = buildPointMaps(chans);
+    chart.data.labels = labelsFull.map(function (lb) { return lb.slice(0, 16); });
+    var crackSingle = chans.length === 1 && !!chans[0].crack_table;
+    var flowSingle = chans.length === 1 && !!chans[0].flow_table;
+    var loadSingle = chans.length === 1 && !!chans[0].load_cell_table && !chans[0].tilt_table && !chans[0].inclinometer_table && !chans[0].crack_table && !chans[0].flow_table;
+    var ssSingle = chans.length === 1 && !!chans[0].surface_settlement_table && !chans[0].tilt_table && !chans[0].inclinometer_table && !chans[0].crack_table && !chans[0].flow_table && !chans[0].load_cell_table;
+    var gwSingle = chans.length === 1 && !!chans[0].groundwater_table && !chans[0].tilt_table && !chans[0].inclinometer_table && !chans[0].crack_table && !chans[0].flow_table && !chans[0].load_cell_table && !chans[0].surface_settlement_table;
+    var vibScalarSingle = chans.length === 1 && wsVibrationScalarPvs && chans[0] && !chans[0].tilt_table && !chans[0].inclinometer_table && !chans[0].crack_table && !chans[0].flow_table && !chans[0].groundwater_table && !chans[0].load_cell_table && !chans[0].surface_settlement_table;
+    var numsOpen = [];
+    var numsCum = [];
+    var numsFlow = [];
+    var numsGw = [];
+    var numsSs = [];
+    var numsLoad = [];
+
+    if (vibm3Pts) {
+      var vLabWs = vibm3Pts.map(function (p) { return String(p.observed_at || '').replace('T', ' ').slice(0, 16); });
+      chart.data.labels = vLabWs;
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'kine (PVS)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDatasetCount(1);
+      var dsWsV3 = chart.data.datasets[0];
+      delete dsWsV3.yAxisID;
+      dsWsV3.borderDash = [];
+      dsWsV3.borderColor = WS_COLORS[0].b;
+      dsWsV3.backgroundColor = WS_COLORS[0].f;
+      dsWsV3.label = 'PVS √(x²+y²+z²)';
+      dsWsV3.data = vibm3Pts.map(function (p) {
+        var pv = p.vib_pvs_gal;
+        return pv === null || pv === undefined || Number.isNaN(Number(pv)) ? null : Number(pv);
+      });
+    } else if (vibScalarSingle) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'kine (PVS)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDatasetCount(1);
+      var cmapS = maps[0];
+      var dsWsS = chart.data.datasets[0];
+      delete dsWsS.yAxisID;
+      dsWsS.borderDash = [];
+      dsWsS.borderColor = WS_COLORS[0].b;
+      dsWsS.backgroundColor = WS_COLORS[0].f;
+      dsWsS.label = 'PVS';
+      dsWsS.data = labelsFull.map(function (lb) {
+        var p = cmapS[lb];
+        if (!p) return null;
+        var xv = p.value_real;
+        return xv === null || xv === undefined || Number.isNaN(Number(xv)) ? null : Number(xv);
+      });
+    } else if (vbMeta && vbMeta.points && vbMeta.points.length === 0 && chans.length === 3 && wsVibration3Axis) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'kine (PVS)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDatasetCount(1);
+      chart.data.labels = [];
+      var dsWsVe = chart.data.datasets[0];
+      delete dsWsVe.yAxisID;
+      dsWsVe.label = 'PVS';
+      dsWsVe.data = [];
+    } else if (crackSingle) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'mm (개폭·누적)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDatasetCount(2);
+      var ch0 = chans[0];
+      var cmap0 = maps[0];
+      var colA = WS_COLORS[0];
+      var colB = WS_COLORS[1];
+      var dsA = chart.data.datasets[0];
+      delete dsA.yAxisID;
+      dsA.borderDash = [];
+      dsA.borderColor = colA.b;
+      dsA.backgroundColor = colA.f;
+      dsA.label = (ch0.sensor_code || ('CH' + ch0.sensor_channel_id)) + ' · 개폭(mm)';
+      dsA.data = labelsFull.map(function (lb) {
+        var p = cmap0[lb];
+        if (!p) return null;
+        var xm = p.crack_read_mm;
+        return xm === null || xm === undefined || Number.isNaN(Number(xm)) ? null : Number(xm);
+      });
+      var dsB = chart.data.datasets[1];
+      delete dsB.yAxisID;
+      dsB.borderDash = [6, 4];
+      dsB.borderColor = colB.b;
+      dsB.backgroundColor = colB.f;
+      dsB.label = (ch0.sensor_code || ('CH' + ch0.sensor_channel_id)) + ' · 누적(mm)';
+      dsB.data = labelsFull.map(function (lb) {
+        var p = cmap0[lb];
+        if (!p) return null;
+        var xc = p.crack_cumulative_mm;
+        return xc === null || xc === undefined || Number.isNaN(Number(xc)) ? null : Number(xc);
+      });
+      dsA.data.forEach(function (v) {
+        if (v !== null && v !== undefined && !Number.isNaN(Number(v))) numsOpen.push(Number(v));
+      });
+      dsB.data.forEach(function (v) {
+        if (v !== null && v !== undefined && !Number.isNaN(Number(v))) numsCum.push(Number(v));
+      });
+    } else if (flowSingle) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'm³ (유량)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDatasetCount(1);
+      var chF = chans[0];
+      var cmapF = maps[0];
+      var dsF = chart.data.datasets[0];
+      delete dsF.yAxisID;
+      dsF.borderDash = [];
+      dsF.borderColor = WS_COLORS[0].b;
+      dsF.backgroundColor = WS_COLORS[0].f;
+      dsF.label = (chF.sensor_code || ('CH' + chF.sensor_channel_id)) + ' · 유량(m³)';
+      dsF.data = labelsFull.map(function (lb) {
+        var p = cmapF[lb];
+        if (!p) return null;
+        var xq = p.flow_qty_m3;
+        return xq === null || xq === undefined || Number.isNaN(Number(xq)) ? null : Number(xq);
+      });
+      dsF.data.forEach(function (v) {
+        if (v !== null && v !== undefined && !Number.isNaN(Number(v))) numsFlow.push(Number(v));
+      });
+    } else if (loadSingle) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'Ton (하중)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDatasetCount(1);
+      var chL = chans[0];
+      var cmapL = maps[0];
+      var dsL = chart.data.datasets[0];
+      delete dsL.yAxisID;
+      dsL.borderDash = [];
+      dsL.borderColor = WS_COLORS[0].b;
+      dsL.backgroundColor = WS_COLORS[0].f;
+      dsL.label = (chL.sensor_code || ('CH' + chL.sensor_channel_id)) + ' · 하중(Ton)';
+      numsLoad.length = 0;
+      dsL.data = labelsFull.map(function (lb) {
+        var p = cmapL[lb];
+        if (!p) return null;
+        var xl = p.load_ton != null && p.load_ton !== undefined ? p.load_ton : p.value_real;
+        return xl === null || xl === undefined || Number.isNaN(Number(xl)) ? null : Number(xl);
+      });
+      dsL.data.forEach(function (v) {
+        if (v !== null && v !== undefined && !Number.isNaN(Number(v))) numsLoad.push(Number(v));
+      });
+    } else if (ssSingle) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'mm (지표침하)',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDatasetCount(1);
+      var chSs = chans[0];
+      var cmapSs = maps[0];
+      var dsSs = chart.data.datasets[0];
+      delete dsSs.yAxisID;
+      dsSs.borderDash = [];
+      dsSs.borderColor = WS_COLORS[0].b;
+      dsSs.backgroundColor = WS_COLORS[0].f;
+      dsSs.label = (chSs.sensor_code || ('CH' + chSs.sensor_channel_id)) + ' · 침하(mm)';
+      numsSs.length = 0;
+      dsSs.data = labelsFull.map(function (lb) {
+        var p = cmapSs[lb];
+        if (!p) return null;
+        var xv = p.ss_read_mm != null && p.ss_read_mm !== undefined ? p.ss_read_mm : p.value_real;
+        return xv === null || xv === undefined || Number.isNaN(Number(xv)) ? null : Number(xv);
+      });
+      dsSs.data.forEach(function (v) {
+        if (v !== null && v !== undefined && !Number.isNaN(Number(v))) numsSs.push(Number(v));
+      });
+    } else if (gwSingle) {
+      chart.options.scales.y.title = {
+        display: true,
+        text: 'GL.m',
+        color: '#1e3a8a',
+      };
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      syncChartDatasetCount(1);
+      var chGw = chans[0];
+      var cmapGw = maps[0];
+      var dsGw = chart.data.datasets[0];
+      delete dsGw.yAxisID;
+      dsGw.borderDash = [];
+      dsGw.borderColor = WS_COLORS[0].b;
+      dsGw.backgroundColor = WS_COLORS[0].f;
+      dsGw.label = (chGw.sensor_code || ('CH' + chGw.sensor_channel_id)) + ' · GL.m';
+      numsGw.length = 0;
+      dsGw.data = labelsFull.map(function (lb) {
+        var p = cmapGw[lb];
+        if (!p) return null;
+        var gx = p.gw_gl_m != null && p.gw_gl_m !== undefined ? p.gw_gl_m : p.value_real;
+        return gx === null || gx === undefined || Number.isNaN(Number(gx)) ? null : Number(gx);
+      });
+      dsGw.data.forEach(function (v) {
+        if (v !== null && v !== undefined && !Number.isNaN(Number(v))) numsGw.push(Number(v));
+      });
+    } else {
+      if (chart.options.scales.y1) delete chart.options.scales.y1;
+      if (chart.options.scales.y.title) delete chart.options.scales.y.title;
+      syncChartDatasetCount(chans.length);
+      var numsAll = [];
+      for (var di = 0; di < chans.length; di++) {
+        var ch = chans[di];
+        var cmap = maps[di];
+        var tilt = !!ch.tilt_table;
+        var inc = !!ch.inclinometer_table;
+        var crack = !!ch.crack_table;
+        var flow = !!ch.flow_table;
+        var ldt = !!ch.load_cell_table;
+        var gwt = !!ch.groundwater_table;
+        var col = WS_COLORS[di % WS_COLORS.length];
+        var ds = chart.data.datasets[di];
+        delete ds.yAxisID;
+        ds.borderDash = [];
+        ds.borderColor = col.b;
+        ds.backgroundColor = col.f;
+        ds.label = (ch.sensor_code || ('CH' + ch.sensor_channel_id))
+          + (tilt ? ' · 변위(mm)' : (inc ? ' · 초기대비(mm)' : (crack ? ' · 개폭(mm)' : (flow ? ' · 유량(m³)' : (ldt ? ' · 하중(Ton)' : (gwt ? ' · GL.m' : (ch.unit ? ' (' + ch.unit + ')' : '')))))));
+        ds.data = labelsFull.map(function (lb) {
+          var p = cmap[lb];
+          if (!p) return null;
+          if (tilt || inc) {
+            var x = p.disp_mm;
+            return x === null || x === undefined || Number.isNaN(Number(x)) ? null : Number(x);
+          }
+          if (crack) {
+            var xm = p.crack_read_mm;
+            return xm === null || xm === undefined || Number.isNaN(Number(xm)) ? null : Number(xm);
+          }
+          if (flow) {
+            var xf = p.flow_qty_m3;
+            return xf === null || xf === undefined || Number.isNaN(Number(xf)) ? null : Number(xf);
+          }
+          if (ldt) {
+            var xl = p.load_ton != null && p.load_ton !== undefined ? p.load_ton : p.value_real;
+            return xl === null || xl === undefined || Number.isNaN(Number(xl)) ? null : Number(xl);
+          }
+          if (gwt) {
+            var xr = p.gw_gl_m != null && p.gw_gl_m !== undefined ? p.gw_gl_m : p.value_real;
+            return xr === null || xr === undefined || Number.isNaN(Number(xr)) ? null : Number(xr);
+          }
+          var xv = p.value_real;
+          return xv === null || xv === undefined || Number.isNaN(Number(xv)) ? null : Number(xv);
+        });
+        ds.data.forEach(function (v) {
+          if (v !== null && v !== undefined && !Number.isNaN(Number(v))) numsAll.push(Number(v));
+        });
+      }
+      var anyIncW = chans.some(function (c) { return c.inclinometer_table; });
+      var anyTiltW = chans.some(function (c) { return c.tilt_table; });
+      if (anyIncW && !anyTiltW) {
+        chart.options.scales.y.title = { display: true, text: 'mm (초기대비 누적)', color: '#1e3a8a' };
+      } else if (anyTiltW && !anyIncW) {
+        chart.options.scales.y.title = { display: true, text: 'mm (변위)', color: '#1e3a8a' };
+      }
+    }
+
+    var lblMgmt = labelsFull;
+    if (vibm3Pts) lblMgmt = vibm3Pts.map(function (p) { return String(p.observed_at || '').replace('T', ' '); });
+    else if (vibScalarSingle) lblMgmt = labelsFull.map(function (lb) { return lb; });
+    else if (gwSingle) lblMgmt = labelsFull.map(function (lb) { return lb; });
+    /* 다단 지중경사계: 프로파일 차트에 관리기준이 있으므로 메인 시계열 차트에는 추가하지 않음
+     * → Y축이 관리기준값(±0.5mm~)에 맞춰 확장돼 실제 데이터선이 납작해지는 문제 방지 */
+    var _skipMgmtMain = chans.length > 1 && chans.every(function(c) { return c.inclinometer_table; });
+    if (!_skipMgmtMain) appendMgmtThresholdDatasets(lblMgmt);
+    applyPointRadiiAll();
+    applyYScaleFromInputs();
+    console.log('[ws] 메인차트 업데이트 완료');
+    var missingMsg = (miss.length ? (' · 미등록 연결코드: ' + miss.join(', ')) : '');
+    if (vibm3Pts) {
+      st.textContent = vibm3Pts.length + '개 공통 시각(3축) · PVS' + missingMsg;
+    } else if (vibScalarSingle) {
+      st.textContent = labelsFull.length + '개 시각 · PVS 직접 적재(kine)' + missingMsg;
+    } else if (vbMeta && wsVibration3Axis && chans.length === 3) {
+      st.textContent = '3축 진동 번들 · 공통 시각 행 없음' + missingMsg;
+    } else if (gwSingle) {
+      st.textContent = labelsFull.length + '개 시각 · 지하수위(GL.m)' + missingMsg;
+    } else {
+      st.textContent = labelsFull.length + '개 시각' + (chans.length > 1 ? ' · ' + chans.length + '개 센서' : '') + missingMsg;
+    }
+
+    if (elMinMax) {
+      if (vibm3Pts && vibm3Pts.length) {
+        var pvsNums = [];
+        vibm3Pts.forEach(function (row) {
+          var pv = row.vib_pvs_gal;
+          if (pv !== null && pv !== undefined && !Number.isNaN(Number(pv))) pvsNums.push(Number(pv));
+        });
+        if (pvsNums.length) {
+          var mnPv = Math.min.apply(null, pvsNums);
+          var mxPv = Math.max.apply(null, pvsNums);
+          elMinMax.textContent = 'PVS(kine) 최소: ' + mnPv.toFixed(decimalPlaces) + ', 최대: ' + mxPv.toFixed(decimalPlaces);
+        } else elMinMax.textContent = '';
+      } else if (vibScalarSingle) {
+        var pvsNumsSc = [];
+        var cmapSc = maps[0];
+        labelsFull.forEach(function (lbSc) {
+          var pr = cmapSc[lbSc];
+          if (!pr || pr.value_real == null || pr.value_real === undefined) return;
+          var pv0 = Number(pr.value_real);
+          if (!Number.isNaN(pv0)) pvsNumsSc.push(pv0);
+        });
+        if (pvsNumsSc.length) {
+          var mnPsc = Math.min.apply(null, pvsNumsSc);
+          var mxPsc = Math.max.apply(null, pvsNumsSc);
+          elMinMax.textContent = 'PVS(kine) 최소: ' + mnPsc.toFixed(decimalPlaces) + ', 최대: ' + mxPsc.toFixed(decimalPlaces);
+        } else elMinMax.textContent = '';
+      } else if (crackSingle) {
+        var partsMm = [];
+        if (numsOpen.length) {
+          var mnO = Math.min.apply(null, numsOpen);
+          var mxO = Math.max.apply(null, numsOpen);
+          partsMm.push('개폭(mm) 최소: ' + fmtDispMm(mnO) + ', 최대: ' + fmtDispMm(mxO));
+        }
+        if (numsCum.length) {
+          var mnC = Math.min.apply(null, numsCum);
+          var mxC = Math.max.apply(null, numsCum);
+          partsMm.push('누적(mm) 최소: ' + fmtDispMm(mnC) + ', 최대: ' + fmtDispMm(mxC));
+        }
+        elMinMax.textContent = partsMm.join(' · ');
+      } else if (flowSingle) {
+        if (numsFlow.length) {
+          var mnF = Math.min.apply(null, numsFlow);
+          var mxF = Math.max.apply(null, numsFlow);
+          elMinMax.textContent = '유량(m³) 최소: ' + mnF.toFixed(2) + ', 최대: ' + mxF.toFixed(2);
+        } else elMinMax.textContent = '';
+      } else if (loadSingle) {
+        if (numsLoad.length) {
+          var mnL = Math.min.apply(null, numsLoad);
+          var mxL = Math.max.apply(null, numsLoad);
+          elMinMax.textContent = '하중(Ton) 최소: ' + mnL.toFixed(decimalPlaces) + ', 최대: ' + mxL.toFixed(decimalPlaces);
+        } else elMinMax.textContent = '';
+      } else if (ssSingle) {
+        if (numsSs.length) {
+          var mnSs = Math.min.apply(null, numsSs);
+          var mxSs = Math.max.apply(null, numsSs);
+          elMinMax.textContent = '침하(mm) 최소: ' + mnSs.toFixed(decimalPlaces) + ', 최대: ' + mxSs.toFixed(decimalPlaces);
+        } else elMinMax.textContent = '';
+      } else if (gwSingle && numsGw.length) {
+        var mnGw = Math.min.apply(null, numsGw);
+        var mxGw = Math.max.apply(null, numsGw);
+        elMinMax.textContent = 'GL.m 최소: ' + mnGw.toFixed(decimalPlaces) + ', 최대: ' + mxGw.toFixed(decimalPlaces);
+      } else {
+        var numsAll = [];
+        for (var dj = 0; dj < chart.data.datasets.length; dj++) {
+          var dsz = chart.data.datasets[dj];
+          if (dsz._ws_mgmt_line) continue;
+          dsz.data.forEach(function (v) {
+            if (v !== null && v !== undefined && !Number.isNaN(Number(v))) numsAll.push(Number(v));
+          });
+        }
+        if (numsAll.length) {
+          var mn = Math.min.apply(null, numsAll);
+          var mx = Math.max.apply(null, numsAll);
+          var allTilt = chans.length > 0 && chans.every(function (c) { return c.tilt_table; });
+          var allInc = chans.length > 0 && chans.every(function (c) { return c.inclinometer_table; });
+          var allCrack = chans.length > 0 && chans.every(function (c) { return c.crack_table; });
+          var allFlow = chans.length > 0 && chans.every(function (c) { return c.flow_table; });
+          var allLoad = chans.length > 0 && chans.every(function (c) { return c.load_cell_table; });
+          var allGw = chans.length > 0 && chans.every(function (c) { return c.groundwater_table; });
+          elMinMax.textContent = allTilt
+            ? ('변위(mm) 최소: ' + fmtDispMm(mn) + ', 최대: ' + fmtDispMm(mx))
+            : (allInc
+            ? ('초기대비(mm) 최소: ' + fmtDispMm(mn) + ', 최대: ' + fmtDispMm(mx))
+            : (allCrack
+              ? ('개폭(mm) 최소: ' + fmtDispMm(mn) + ', 최대: ' + fmtDispMm(mx))
+              : (allFlow
+                ? ('유량(m³) 최소: ' + mn.toFixed(2) + ', 최대: ' + mx.toFixed(2))
+                : (allLoad
+                  ? ('하중(Ton) 최소: ' + mn.toFixed(decimalPlaces) + ', 최대: ' + mx.toFixed(decimalPlaces))
+                  : (allGw
+                  ? ('GL.m 최소: ' + mn.toFixed(decimalPlaces) + ', 최대: ' + mx.toFixed(decimalPlaces))
+                  : ('값 최소: ' + mn + ', 최대: ' + mx))))));
+        } else elMinMax.textContent = '';
+      }
+    }
+
+    var thead = document.getElementById('ws-tbl-thead');
+    var tblHint = document.getElementById('ws-tbl-hint');
+    var single = chans.length === 1;
+    var tilt0 = single && !!chans[0].tilt_table;
+    var inc0 = single && !!chans[0].inclinometer_table;
+    var crack0 = single && !!chans[0].crack_table;
+    var flow0 = single && !!chans[0].flow_table;
+    var load0 = single && !!chans[0].load_cell_table;
+    var ss0 = single && !!chans[0].surface_settlement_table;
+    var gw0 = single && !!chans[0].groundwater_table;
+    var allTiltMulti = chans.length > 1 && chans.every(function (c) { return c.tilt_table; });
+    var allIncMulti = chans.length > 1 && chans.every(function (c) { return c.inclinometer_table; });
+
+    /* 지중경사계 다단 공통 헬퍼 -----------------------------------------------
+     * chans[0]=최하부(I1-1), chans[N-1]=최상부(I1-N)
+     * bottomDepth = -(N*segLen_m) : 고정 기준점 (항상 x=0)
+     * 각 레벨 누적변위 = 최하부부터 위로 disp_mm 합산 */
+    var _profN      = allIncMulti ? chans.length : 0;
+    var _profSegM   = wsSegLenMm / 1000.0;
+    var _profBotDep = -(_profN * _profSegM);
+    function _computeProfile(tKey) {
+      var pts = [{ x: 0, y: _profBotDep }];
+      var cum = 0;
+      for (var _pi = 0; _pi < _profN; _pi++) {
+        var _dep = -((_profN - 1 - _pi) * _profSegM);
+        var _mp  = maps[_pi] || {};
+        var _pp  = _mp[tKey];
+        var _v   = (_pp && _pp.disp_mm != null && !Number.isNaN(+_pp.disp_mm)) ? +_pp.disp_mm : null;
+        if (_v !== null) cum += _v;
+        pts.push({ x: cum, y: _dep });
+      }
+      return pts;
+    }
+
+    var t0 = primaryInitialTimeKey(chans);
+    var elInit = document.getElementById('ws-tbl-initial-ref');
+    if (elInit) {
+      if (vibm3Pts || vbMeta || vibScalarSingle) {
+        elInit.style.display = 'none';
+        elInit.innerHTML = '';
+      } else if (t0) {
+        elInit.style.display = 'block';
+        elInit.innerHTML = crack0
+          ? ('초기치(균열·조회 구간 시간순 첫 유효 mm): <strong>' + t0 + '</strong> · 누적 열은 이 시각의 개폭을 0으로 한 증감입니다.')
+          : (flow0
+            ? ('초기치(유량계·조회 구간 첫 유효 m³): <strong>' + t0 + '</strong> · 초기대비 열은 이 시각의 유량 대비 증감입니다.')
+            : (load0
+              ? ('초기치(하중계·조회 구간 첫 유효 Ton): <strong>' + t0 + '</strong> · 초기대비 열은 이 시각 대비 증감입니다.')
+              : (ss0
+                ? ('초기치(지표침하계·조회 구간 첫 유효 mm): <strong>' + t0 + '</strong> · 변위·초기대비는 이 시각 대비 증감입니다.')
+                : (gw0
+              ? ('초기치(지하수위·조회 구간 첫 유효 GL.m): <strong>' + t0 + '</strong> · 초기대비 열은 이 시각 대비 증감입니다.')
+              : (inc0
+              ? ('초기치(지중·내공·조회 구간 첫 유효 mm): <strong>' + t0 + '</strong> · 그래프·누적열은 이 시각을 0으로 한 상대변위(mm)입니다.')
+              : ('초기치(대표 센서·조회 구간 시간순 첫 유효 측정): <strong>' + t0 + '</strong> · 이 시각을 기준으로 변화량·변위(경사)·초기대비(일반)가 계산됩니다.'))))));
+      } else {
+        elInit.style.display = 'none';
+        elInit.innerHTML = '';
+      }
+    }
+
+    if (thead) {
+      if (vibm3Pts && vbMeta.axis_sensor_codes) {
+        var acWs = vbMeta.axis_sensor_codes;
+        var escH = function (sx) { return String(sx || '').replace(/</g, '&lt;'); };
+        thead.innerHTML = '<tr><th class="sw-col-no">No.</th><th>측정일시</th><th>X ' + escH(acWs[0]) + ' (kine)</th><th>Y ' + escH(acWs[1]) + ' (kine)</th><th>Z ' + escH(acWs[2]) + ' (kine)</th><th>PVS (kine)</th><th>비고</th></tr>';
+      } else if (vibScalarSingle) {
+        thead.innerHTML = '<tr><th class="sw-col-no">No.</th><th>측정일시</th><th>PVS (kine)</th><th>비고</th></tr>';
+      } else if (single && tilt0) {
+        thead.innerHTML = '<tr><th class="sw-col-no">No.</th><th>측정일시</th><th>측정치(V)</th><th>측정치(deg)</th><th>변화량(deg)</th><th>변위량(mm)</th><th>각변위</th><th>비고</th></tr>';
+      } else if (single && inc0) {
+        thead.innerHTML = '<tr><th class="sw-col-no">No.</th><th>측정일시</th><th>측정치(mm)</th><th>누적변위(초기대비)(mm)</th><th>비고</th></tr>';
+      } else if (single && crack0) {
+        thead.innerHTML = '<tr><th class="sw-col-no">No.</th><th>측정일시</th><th>측정치(V)</th><th>변위(mm)</th><th>전회대비(mm)</th><th>초기대비(mm)</th><th>비고</th></tr>';
+      } else if (single && flow0) {
+        thead.innerHTML = '<tr><th class="sw-col-no">No.</th><th>측정일시</th><th>유량(m³)</th><th>전회대비(m³)</th><th>초기대비(m³)</th><th>비고</th></tr>';
+      } else if (single && load0) {
+        thead.innerHTML = '<tr><th class="sw-col-no">No.</th><th>측정일시</th><th>측정치(원천)</th><th>하중(Ton)</th><th>전회대비(Ton)</th><th>초기대비(Ton)</th><th>비고</th></tr>';
+      } else if (single && ss0) {
+        thead.innerHTML = '<tr><th class="sw-col-no">No.</th><th>측정일시</th><th>측정치(V)</th><th>측정치(mm)</th><th>전회대비</th><th>초기대비</th><th>비고</th></tr>';
+      } else if (gwSingle) {
+        thead.innerHTML = '<tr><th class="sw-col-no">No.</th><th>측정일시</th><th>측정값(V)</th><th>지하수위(GL.m)</th><th>변화량</th><th>전회대비</th><th>초기대비</th><th>비고</th></tr>';
+      } else if (single && !tilt0 && !inc0 && !vibScalarSingle && !gwSingle && !load0 && !ss0) {
+        thead.innerHTML = '<tr><th class="sw-col-no">No.</th><th>측정일시</th><th>' + autoName.replace(/</g, '&lt;') + (unit ? ' <span class="sw-th-unit">' + unit.replace(/</g, '&lt;') + '</span>' : '') + '</th><th>전회대비</th><th>초기대비</th><th>비고</th></tr>';
+      } else if (allTiltMulti) {
+        var r1 = '<tr><th class="sw-col-no" rowspan="2">No.</th><th rowspan="2">측정일시</th>';
+        var r2 = '<tr>';
+        for (var ci = 0; ci < chans.length; ci++) {
+          var ccode = (chans[ci].sensor_code || '').replace(/</g, '&lt;');
+          var uu = (chans[ci].unit || '').replace(/</g, '&lt;');
+          r1 += '<th colspan="4">' + ccode + (uu ? ' <span class="sw-th-unit">(' + uu + ')</span>' : '') + '</th>';
+          r2 += '<th>측정치' + (uu ? ' <span class="sw-th-unit">' + uu + '</span>' : '') + '</th><th>변화량(deg)</th><th>변위량(mm)</th><th>각변위</th>';
+        }
+        r1 += '<th rowspan="2">비고</th></tr>';
+        r2 += '</tr>';
+        thead.innerHTML = r1 + r2;
+      } else if (allIncMulti) {
+        /* 헤더는 테이블 body 렌더링 시 동적으로 생성 */
+        thead.innerHTML = '';
+      } else if (vbMeta && chans.length === 3 && wsVibration3Axis) {
+        thead.innerHTML = '<tr><th>안내</th></tr>';
+      } else {
+        thead.innerHTML = '<tr><th class="sw-col-no">No.</th><th>측정일시</th>' + chans.map(function (c) {
+          return '<th>' + String(c.sensor_code || '').replace(/</g, '&lt;') + '</th>';
+        }).join('') + '<th>비고</th></tr>';
+      }
+    }
+    if (tblHint) {
+      if (vibm3Pts && vbMeta.axis_sensor_codes) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '진동계(3축): 1=X, 2=Y, 3=Z. 연결에 -Y -Z 만 써도 됨. PVS=√(x²+y²+z²). 그래프는 PVS만 표시합니다.';
+      } else if (vibScalarSingle) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '진동계: 적재 칼럼이 곧 PVS(kine)입니다. √합성 계산 없음 · 전회·초기대비 없음.';
+      } else if (gwSingle) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '지하수위계: 측정값(V)=원천값(value_raw). 지하수위(GL.m)=V×5−파이프심도(pipe) 계산 결과(value_real). 변화량은 직전 행 대비 절댓값입니다.';
+      } else if (vbMeta && chans.length === 3 && wsVibration3Axis) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '연결된 3축 채널의 공통 시각 데이터가 없습니다.';
+      } else if (single && tilt0) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '구조물경사계(5V=30°): 측정치(V)=원천값. 각도(°)=V×6. 변화량(°)=각도−초기각도(조회 구간 첫 유효 각도). 변위량(mm)=1000×변화량(°)×(π/180) 근사(mm)입니다.';
+      } else if (single && inc0) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '지중경사·내공변위: 적재값은 절대 변위(mm). 표의 누적열·그래프는 조회 구간 첫 유효 측정을 기준(0)으로 한 초기대비 상대변위입니다.';
+      } else if (single && crack0) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '균열측정계: 측정치(V)=원천값. 변위(mm)=원시 V×10(원시가 없으면 value_real을 mm로 간주). 전회대비·초기대비는 변위(mm) 기준으로 계산합니다.';
+      } else if (single && flow0) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '유량계: 순간 유량은 1번 계산식(스케일 후 m³) 결과입니다. 전회대비·초기대비 열과 그래프(유량)는 소수 둘째 자리까지 표시합니다.';
+      } else if (single && load0) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '하중계: 측정치(원천)=CSV 원시값. 하중(Ton)=계산식(예: m*gf) 결과입니다. 전회대비·초기대비는 Ton 기준으로 계산합니다.';
+      } else if (single && ss0) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '지표침하계: 1000mm 센서 기준 계산식은 m*200(mm)입니다. 표는 측정치(V)·측정치(mm)와 변위(mm) 항목의 전회대비·초기대비를 표시합니다.';
+      } else if (allTiltMulti) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '연결 센서: 각 축은 조회 구간 첫 측정치 기준 변위(mm)로 그래프에 겹쳐 표시됩니다. 표는 시각을 맞춰 한 행에 정리합니다.';
+      } else if (allIncMulti) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '지중·내공 다단: 대표=하부(예: I1-1 또는 TN001), 연결=하부→상부 순. 각 채널은 조회 구간 첫 유효값 대비 초기대비 누적변위(mm)로 그래프·표에 표시됩니다.';
+      } else if (chans.length > 1) {
+        tblHint.style.display = 'block';
+        tblHint.textContent = '연결 센서(종류 혼합): 그래프는 시각을 맞춰 표시하며, 표는 센서별 측정값(또는 경사계는 변위) 열로 요약합니다.';
+      } else {
+        tblHint.style.display = 'none';
+        tblHint.textContent = '';
+      }
+    }
+
+    console.log('[ws] allIncMulti=' + allIncMulti + ' chans.length=' + chans.length + ' inclinometer_table[0]=' + (chans[0] && chans[0].inclinometer_table));
+    if (elProfileWrap && elProfileTime) {
+      if (allIncMulti) {
+        elProfileWrap.style.display = 'flex';
+        console.log('[ws] 프로파일 wrap 표시');
+        var elProfileTimeLabel = document.getElementById('ws-profile-time-label');
+        var opts = labelsFull.slice();
+
+        /* 슬라이더 범위 : 기본값 = 최신 시각 */
+        var prevLabel = elProfileTimeLabel ? (elProfileTimeLabel.textContent || '') : '';
+        var prevIdx   = opts.indexOf(prevLabel);
+        var pickIdx   = (prevIdx >= 0) ? prevIdx : (opts.length - 1);
+        var initTKey  = opts[0]       || '';
+        var selTKey   = opts[pickIdx] || '';
+
+        /* ── 데이터셋 구성 ──────────────────────────────────────────────
+         * [0] 기준선 : 조회 시작 시각 (x=0 직선)
+         * [1..] 관리기준 수직선들
+         * [마지막] 선택 시각 프로파일 */
+        var allDs = [
+          {
+            label: '초기(기준선) · ' + initTKey.slice(0, 16),
+            data: [{ x: 0, y: _profBotDep }, { x: 0, y: 0 }],
+            borderColor: '#0f172a',
+            borderDash: [8, 5],
+            backgroundColor: 'transparent',
+            showLine: true,
+            pointRadius: 0,
+            borderWidth: 2,
+            order: 10,
+          }
+        ];
+
+        /* 관리기준 수직선 */
+        if (wsMgmtLevels) {
+          [
+            { pri: 'level1_primary', sec: 'level1_secondary', color: '#84cc16', tag: '1차' },
+            { pri: 'level2_primary', sec: 'level2_secondary', color: '#eab308', tag: '2차' },
+            { pri: 'level3_primary', sec: 'level3_secondary', color: '#dc2626', tag: '3차' },
+          ].forEach(function(mg) {
+            [wsMgmtLevels[mg.pri], wsMgmtLevels[mg.sec]].forEach(function(mv) {
+              if (mv != null && !Number.isNaN(Number(mv))) {
+                allDs.push({
+                  label: mg.tag + '관리(' + Number(mv).toFixed(1) + 'mm)',
+                  data: [{ x: +mv, y: _profBotDep }, { x: +mv, y: 0 }],
+                  borderColor: mg.color,
+                  borderDash: [5, 3],
+                  backgroundColor: 'transparent',
+                  showLine: true,
+                  pointRadius: 0,
+                  borderWidth: 1.5,
+                  order: 5,
+                });
+              }
+            });
+          });
+        }
+
+        allDs.push({
+          label: '누적변위 · ' + selTKey.slice(0, 16),
+          data: _computeProfile(selTKey),
+          borderColor: '#2563eb',
+          backgroundColor: 'rgba(37,99,235,0.75)',
+          showLine: true,
+          tension: 0.1,
+          pointRadius: 5,
+          borderWidth: 2.5,
+          order: 0,
+        });
+
+        /* 슬라이더 설정 */
+        elProfileTime.min = '0';
+        elProfileTime.max = String(Math.max(0, opts.length - 1));
+        elProfileTime.value = String(pickIdx);
+        if (elProfileTimeLabel) elProfileTimeLabel.textContent = selTKey || '—';
+
+        /* display:none→block 직후엔 브라우저가 아직 치수를 계산 안 해서
+         * Chart.js 가 0px 너비로 초기화될 수 있음 → rAF 후 생성+리사이즈 */
+        var _allDsSnap = allDs;
+        requestAnimationFrame(function () {
+          var pchart = ensureProfileChart();
+          pchart.data.datasets = _allDsSnap;
+          /* Y축: 0=지표(위), _profBotDep=최하부(아래) */
+          pchart.options.scales.y.max = 0;
+          pchart.options.scales.y.min = _profBotDep;
+          pchart.update('none');
+          requestAnimationFrame(function () { if (pchart) pchart.resize(); });
+          console.log('[ws] 프로파일 차트 렌더 완료');
+
+          function updateProfileAtTime(tKey) {
+            if (!pchart || !pchart.data.datasets.length) return;
+            var selDs = pchart.data.datasets[pchart.data.datasets.length - 1];
+            selDs.data  = _computeProfile(tKey);
+            selDs.label = '누적변위 · ' + (tKey || '').slice(0, 16);
+            pchart.update('none');
+          }
+
+          elProfileTime.oninput = function() {
+            var idx  = parseInt(this.value, 10);
+            var tKey = opts[idx] || '';
+            if (elProfileTimeLabel) elProfileTimeLabel.textContent = tKey || '—';
+            updateProfileAtTime(tKey);
+          };
+        });
+      } else {
+        elProfileWrap.style.display = 'none';
+        console.log('[ws] 프로파일 wrap 숨김 (allIncMulti=false)');
+      }
+    }
+
+    const tb = document.querySelector('#ws-tbl-points tbody');
+    tb.innerHTML = '';
+    var cap = Math.min(vibm3Pts ? vibm3Pts.length : labelsFull.length, 500);
+
+    if (vibm3Pts && vbMeta.axis_sensor_codes) {
+      for (var vi = 0; vi < cap; vi++) {
+        var rowPv = vibm3Pts[vi];
+        if (!rowPv) continue;
+        var lbws = String(rowPv.observed_at || '').replace('T', ' ').slice(0, 19);
+        var trW = document.createElement('tr');
+        trW.innerHTML = '<td>' + String(vi + 1) + '</td><td>' + lbws + '</td><td>' + fmtVal(rowPv.vib_x_gal) + '</td><td>' + fmtVal(rowPv.vib_y_gal) + '</td><td>' + fmtVal(rowPv.vib_z_gal) + '</td><td>' + fmtVal(rowPv.vib_pvs_gal) + '</td><td></td>';
+        tb.appendChild(trW);
+      }
+    } else if (vbMeta && chans.length === 3 && wsVibration3Axis) {
+      var trE2 = document.createElement('tr');
+      trE2.innerHTML = '<td>공통 시각 행이 없습니다.</td>';
+      tb.appendChild(trE2);
+    } else if (vibScalarSingle) {
+      var cmapPvs = maps[0];
+      for (var ips = 0; ips < cap; ips++) {
+        var lbP = labelsFull[ips];
+        var pp = cmapPvs[lbP];
+        if (!pp) continue;
+        var trP = document.createElement('tr');
+        trP.innerHTML = '<td>' + String(ips + 1) + '</td><td>' + lbP + '</td><td>' + fmtVal(pp.value_real) + '</td>' + remarkMarkup(lbP, t0);
+        tb.appendChild(trP);
+      }
+    } else if (single && tilt0) {
+      var cmapOnly = maps[0];
+      for (var i = 0; i < cap; i++) {
+        var lb0 = labelsFull[i];
+        var p = cmapOnly[lb0];
+        if (!p) continue;
+        const tr = document.createElement('tr');
+        var ag = (p.angular_gradient != null && p.angular_gradient !== undefined) ? String(p.angular_gradient) : '';
+        tr.innerHTML = '<td>' + String(i + 1) + '</td><td>' + lb0 + '</td><td>' + fmtVal(p.value_raw) + '</td><td>' + fmtVal(p.value_real) + '</td><td>' + fmtVal(p.delta_deg) + '</td><td>' + fmtDispMm(p.disp_mm) + '</td><td>' + ag + '</td>' + remarkMarkup(lb0, t0);
+        tb.appendChild(tr);
+      }
+    } else if (single && inc0) {
+      var cmapInc = maps[0];
+      for (var ii0 = 0; ii0 < cap; ii0++) {
+        var lbInc = labelsFull[ii0];
+        var pi = cmapInc[lbInc];
+        if (!pi) continue;
+        var tri = document.createElement('tr');
+        tri.innerHTML = '<td>' + String(ii0 + 1) + '</td><td>' + lbInc + '</td><td>' + fmtVal(pi.value_real) + '</td><td>' + fmtDeltaMm(pi.disp_mm) + '</td>' + remarkMarkup(lbInc, t0);
+        tb.appendChild(tri);
+      }
+    } else if (single && crack0) {
+      var cmapCr = maps[0];
+      for (var ic = 0; ic < cap; ic++) {
+        var lbCr = labelsFull[ic];
+        var pc = cmapCr[lbCr];
+        if (!pc) continue;
+        const trc = document.createElement('tr');
+        trc.innerHTML = '<td>' + String(ic + 1) + '</td><td>' + lbCr + '</td><td>' + fmtVal(pc.value_raw) + '</td><td>' + fmtDispMm(pc.crack_read_mm) + '</td><td>' + fmtDeltaMm(pc.crack_delta_prev_mm) + '</td><td>' + fmtDeltaMm(pc.crack_cumulative_mm) + '</td>' + remarkMarkup(lbCr, t0);
+        tb.appendChild(trc);
+      }
+    } else if (single && flow0) {
+      var cmapFl = maps[0];
+      for (var ifl = 0; ifl < cap; ifl++) {
+        var lbFl = labelsFull[ifl];
+        var pf = cmapFl[lbFl];
+        if (!pf) continue;
+        const trFl = document.createElement('tr');
+        trFl.innerHTML = '<td>' + String(ifl + 1) + '</td><td>' + lbFl + '</td><td>' + fmtM3Cell(pf.flow_qty_m3) + '</td><td>' + fmtDeltaM3(pf.flow_delta_prev_m3) + '</td><td>' + fmtDeltaM3(pf.flow_delta_initial_m3) + '</td>' + remarkMarkup(lbFl, t0);
+        tb.appendChild(trFl);
+      }
+    } else if (single && load0) {
+      var cmapLd = maps[0];
+      for (var ild = 0; ild < cap; ild++) {
+        var lbLd = labelsFull[ild];
+        var pl = cmapLd[lbLd];
+        if (!pl) continue;
+        const trLd = document.createElement('tr');
+        trLd.innerHTML = '<td>' + String(ild + 1) + '</td><td>' + lbLd + '</td><td>' + fmtVal(pl.value_raw) + '</td><td>' + fmtVal(pl.load_ton != null ? pl.load_ton : pl.value_real) + '</td><td>' + fmtDelta(pl.load_delta_prev_ton) + '</td><td>' + fmtDelta(pl.load_delta_initial_ton) + '</td>' + remarkMarkup(lbLd, t0);
+        tb.appendChild(trLd);
+      }
+    } else if (single && ss0) {
+      var cmapSsTb = maps[0];
+      for (var iss = 0; iss < cap; iss++) {
+        var lbSs = labelsFull[iss];
+        var ps = cmapSsTb[lbSs];
+        if (!ps) continue;
+        const trSs = document.createElement('tr');
+        trSs.innerHTML = '<td>' + String(iss + 1) + '</td><td>' + lbSs + '</td><td>' + fmtVal(ps.ss_read_v) + '</td><td>' + fmtVal(ps.ss_read_mm) + '</td><td>' + fmtDelta(ps.ss_delta_prev_mm) + '</td><td>' + fmtDelta(ps.ss_delta_initial_mm) + '</td>' + remarkMarkup(lbSs, t0);
+        tb.appendChild(trSs);
+      }
+    } else if (gwSingle) {
+      var cmapGw = maps[0];
+      for (var igw = 0; igw < cap; igw++) {
+        var lbGw = labelsFull[igw];
+        var pgw = cmapGw[lbGw];
+        if (!pgw) continue;
+        const trGw = document.createElement('tr');
+        var vRead = (pgw.gw_read_v != null && pgw.gw_read_v !== undefined) ? pgw.gw_read_v : (pgw.value_raw != null && pgw.value_raw !== undefined ? pgw.value_raw : pgw.value_step_1);
+        var vGl = (pgw.gw_gl_m != null && pgw.gw_gl_m !== undefined) ? pgw.gw_gl_m : pgw.value_real;
+        trGw.innerHTML = '<td>' + String(igw + 1) + '</td><td>' + lbGw + '</td><td>' + fmtVal(vRead) + '</td><td>' + fmtVal(vGl) + '</td><td>' + fmtGwMag(pgw.gw_change_mag_m) + '</td><td>' + fmtDelta(pgw.gw_delta_prev_m) + '</td><td>' + fmtDelta(pgw.gw_delta_initial_m) + '</td>' + remarkMarkup(lbGw, t0);
+        tb.appendChild(trGw);
+      }
+    } else if (single && !tilt0 && !inc0 && !vibScalarSingle && !gwSingle && !load0 && !ss0) {
+      var cmapNs = maps[0];
+      var initial = null;
+      for (var jx = 0; jx < labelsFull.length; jx++) {
+        var pj0 = cmapNs[labelsFull[jx]];
+        if (pj0 && pj0.value_real != null && !Number.isNaN(Number(pj0.value_real))) {
+          initial = Number(pj0.value_real);
+          break;
+        }
+      }
+      for (var i2 = 0; i2 < cap; i2++) {
+        var lbNs = labelsFull[i2];
+        var p2 = cmapNs[lbNs];
+        if (!p2) continue;
+        var v = p2.value_real;
+        var num = (v !== null && v !== undefined && !Number.isNaN(Number(v))) ? Number(v) : null;
+        var prevNum = null;
+        for (var k = i2 - 1; k >= 0; k--) {
+          var pkPrev = cmapNs[labelsFull[k]];
+          if (pkPrev && pkPrev.value_real != null && !Number.isNaN(Number(pkPrev.value_real))) {
+            prevNum = Number(pkPrev.value_real);
+            break;
+          }
+        }
+        const tr2 = document.createElement('tr');
+        const tdNo = document.createElement('td');
+        const tdT = document.createElement('td');
+        const tdV = document.createElement('td');
+        const tdPrev = document.createElement('td');
+        const tdInit = document.createElement('td');
+        const tdRm = document.createElement('td');
+        tdNo.textContent = String(i2 + 1);
+        tdT.textContent = lbNs;
+        tdV.textContent = fmtVal(v);
+        if (num !== null && prevNum !== null) tdPrev.textContent = fmtDelta(num - prevNum);
+        else tdPrev.textContent = '—';
+        if (num !== null && initial !== null) tdInit.textContent = fmtDelta(num - initial);
+        else tdInit.textContent = '—';
+        if (t0 && lbNs === t0) tdRm.innerHTML = '<strong>초기치</strong>';
+        else tdRm.textContent = '';
+        tr2.appendChild(tdNo);
+        tr2.appendChild(tdT);
+        tr2.appendChild(tdV);
+        tr2.appendChild(tdPrev);
+        tr2.appendChild(tdInit);
+        tr2.appendChild(tdRm);
+        tb.appendChild(tr2);
+      }
+    } else if (allTiltMulti) {
+      for (var ri = 0; ri < cap; ri++) {
+        var lb = labelsFull[ri];
+        var trm = document.createElement('tr');
+        var html = '<td>' + String(ri + 1) + '</td><td>' + lb + '</td>';
+        for (var cj = 0; cj < chans.length; cj++) {
+          var pm = maps[cj][lb];
+          if (!pm) {
+            html += '<td>—</td><td>—</td><td>—</td><td>—</td>';
+          } else {
+            var agm = (pm.angular_gradient != null && pm.angular_gradient !== undefined) ? String(pm.angular_gradient) : '';
+            html += '<td>' + fmtByCh(chans[cj], pm.value_real) + '</td><td>' + fmtByCh(chans[cj], pm.delta_deg) + '</td><td>' + fmtDispMm(pm.disp_mm) + '</td><td>' + agm + '</td>';
+          }
+        }
+        html += remarkMarkup(lb, t0);
+        trm.innerHTML = html;
+        tb.appendChild(trm);
+      }
+    } else if (allIncMulti) {
+      /* 깊이(행) × 시각(열) 피벗 테이블
+       * 행: 고정기준점(_profBotDep) + 각 센서 깊이 (최하부→최상부)
+       * 열: labelsFull 중 최신 MAX_INCM_COL 개 */
+      var MAX_INCM_COL = 10;   /* 표시할 최대 시각(열) 수 */
+      var incColStart = Math.max(0, labelsFull.length - MAX_INCM_COL);
+      var incCols = labelsFull.slice(incColStart);  // 시각 목록(열) – 최신 10개
+
+      /* 깊이 행 목록: 0.0(지표) → -1 → -2 → ... → 최하부(고정기준점) */
+      var depthRows = [];
+      for (var dri = _profN - 1; dri >= 0; dri--) {
+        var dr_dep = -((_profN - 1 - dri) * _profSegM);
+        depthRows.push({ label: dr_dep.toFixed(1), isBase: false, chanIdx: dri });
+      }
+      depthRows.push({ label: _profBotDep.toFixed(1), isBase: true });
+
+      /* 헤더: Depth(m) + 날짜행 + 시각행 */
+      var hdr1 = '<tr><th rowspan="2" style="position:sticky;left:0;background:#f1f5f9;min-width:70px;z-index:2">Depth<br>(m)</th>';
+      var hdr2 = '<tr>';
+      for (var ci2 = 0; ci2 < incCols.length; ci2++) {
+        var colT = incCols[ci2];
+        var colDate = colT.slice(2, 10).replace(/-/g, '/');
+        var colTime = colT.slice(11, 16);
+        hdr1 += '<th style="min-width:72px;text-align:center;font-size:11px">' + colDate + '</th>';
+        hdr2 += '<th style="text-align:center;font-size:11px;color:#64748b">' + colTime + '</th>';
+      }
+      hdr1 += '</tr>';
+      hdr2 += '</tr>';
+      if (thead) thead.innerHTML = hdr1 + hdr2;
+
+      /* 데이터 행: 각 깊이 레벨에서 각 시각의 누적변위 */
+      depthRows.forEach(function(dr) {
+        var row = document.createElement('tr');
+        var rowH = '<td style="position:sticky;left:0;background:#f8fafc;font-weight:600;font-size:12px">' + dr.label + '</td>';
+        for (var ci3 = 0; ci3 < incCols.length; ci3++) {
+          var tCol = incCols[ci3];
+          if (dr.isBase) {
+            rowH += '<td style="text-align:right;font-size:12px;color:#94a3b8">0.000</td>';
+          } else {
+            var pts = _computeProfile(tCol);
+            /* pts[0]=basePt, pts[1]=chans[0](최하부), ... pts[N]=chans[N-1](최상부)
+             * dr.chanIdx : chans의 인덱스 (0=최하부) → pts 인덱스 = chanIdx+1 */
+            var pt = pts[dr.chanIdx + 1];
+            var val = pt ? pt.x : null;
+            if (val === null || Number.isNaN(+val)) {
+              rowH += '<td style="text-align:right;font-size:12px">—</td>';
+            } else {
+              rowH += '<td style="text-align:right;font-size:12px">' + (+val).toFixed(3) + '</td>';
+            }
+          }
+        }
+        row.innerHTML = rowH;
+        tb.appendChild(row);
+      });
+    } else {
+      for (var ri2 = 0; ri2 < cap; ri2++) {
+        var lb2 = labelsFull[ri2];
+        var trn = document.createElement('tr');
+        var h = '<td>' + String(ri2 + 1) + '</td><td>' + lb2 + '</td>';
+        for (var ck = 0; ck < chans.length; ck++) {
+          var pk = maps[ck][lb2];
+          if (!pk) h += '<td>—</td>';
+          else if (chans[ck].tilt_table) h += '<td>' + fmtDispMm(pk.disp_mm) + '</td>';
+          else if (chans[ck].inclinometer_table) h += '<td>' + fmtDeltaMm(pk.disp_mm) + '</td>';
+          else if (chans[ck].crack_table) h += '<td>' + fmtDispMm(pk.crack_read_mm) + '</td>';
+          else if (chans[ck].flow_table) h += '<td>' + fmtM3Cell(pk.flow_qty_m3) + '</td>';
+          else if (chans[ck].groundwater_table) {
+            var ggl = (pk.gw_gl_m != null && pk.gw_gl_m !== undefined) ? pk.gw_gl_m : pk.value_real;
+            h += '<td>' + fmtByCh(chans[ck], ggl) + '</td>';
+          }           else h += '<td>' + fmtByCh(chans[ck], pk.value_real) + '</td>';
+        }
+        h += remarkMarkup(lb2, t0);
+        trn.innerHTML = h;
+        tb.appendChild(trn);
+      }
+    }
+  }
+
+  document.getElementById('ws-btn-load').addEventListener('click', function() {
+    loadSeries().catch(function(e) {
+      const st = document.getElementById('ws-chart-status') || st0;
+      if (st) st.textContent = '조회 오류: ' + ((e && e.message) ? e.message : String(e));
+    });
+  });
+  var btnPurge = document.getElementById('ws-btn-purge-period');
+  if (btnPurge) btnPurge.addEventListener('click', purgePeriodMeasurements);
+  loadSeries().catch(function(e) {
+    const st = document.getElementById('ws-chart-status') || st0;
+    if (st) st.textContent = '초기 로드 오류: ' + ((e && e.message) ? e.message : String(e));
+  });
+  } catch (e) {
+    const msg = (e && e.message) ? e.message : String(e);
+    if (st0) st0.textContent = '차트 스크립트 오류: ' + msg;
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}
