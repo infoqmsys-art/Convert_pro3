@@ -1,5 +1,14 @@
 # Git add / commit / push for Convert_pro repo (repo root = parent of build_scripts)
 $ErrorActionPreference = "Stop"
+try {
+    if ($env:OS -eq 'Windows_NT') {
+        & chcp.com 65001 2>$null | Out-Null
+        try {
+            [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+            $OutputEncoding = [Console]::OutputEncoding
+        } catch { }
+    }
+} catch { }
 
 $Root = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
 Push-Location $Root
@@ -11,8 +20,9 @@ try {
         exit 1
     }
 
-    $branch = (git branch --show-current 2>$null).Trim()
-    if (-not $branch) { $branch = "main" }
+    $branch = git branch --show-current 2>$null
+    if (-not [string]::IsNullOrWhiteSpace($branch)) { $branch = $branch.TrimEnd() }
+    else { $branch = "main" }
 
     Write-Host ""
     Write-Host "Repo: $Root"
