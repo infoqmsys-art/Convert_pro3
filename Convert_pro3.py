@@ -101,6 +101,74 @@ try:
 except Exception as e:
     _MONITORING_FAIL_MSG = str(e)
 
+
+def restart_monitoring_web_only(app_instance) -> bool:
+    """HTTP(플라스크) 레이어만 재구동 · 메인 변환 프로그램은 유지한다."""
+    global _monitoring_server_mod, _start_monitoring_server
+    old = _monitoring_server_mod
+    if old is None:
+        return False
+    lg = getattr(app_instance, "logger", None)
+
+    def _log(msg: str, level: str = "INFO"):
+        if lg:
+            lg.log(f"[WebRestart] {msg}", level=level)
+
+    down = getattr(old, "shutdown_http_server", None)
+    if not callable(down):
+        _log(
+            "소프트 웹 재시작을 지원하는 monitoring/server.py 가 아닙니다. "
+            "프로그램을 한 번 종료했다 다시 실행하거나 최신 빌드를 설치하세요.",
+            level="WARN",
+        )
+        return False
+
+    _log("HTTP 서버 종료 중...")
+    try:
+        down()
+    except Exception as ex:
+        _log(str(ex), level="WARN")
+
+    import sys
+
+    time.sleep(0.4)
+    sys.modules.pop("monitoring.server", None)
+    sys.modules.pop("monitoring.data_cache", None)
+    try:
+        new_mod = _load_monitoring_server()
+        _monitoring_server_mod = new_mod
+        _start_monitoring_server = new_mod.start_server
+    except Exception as ex:
+        _log(f"모듈 다시 불러오기 실패: {ex}", level="ERROR")
+        return False
+
+    th = threading.Thread(
+        target=new_mod.start_server,
+        kwargs=dict(open_browser=False),
+        daemon=True,
+        name="MonitoringServer",
+    )
+    th.start()
+    app_instance._mon_thread = th
+
+    if hasattr(new_mod, "set_category_saved_callback"):
+        def _on_cat_saved():
+            try:
+                mg = getattr(app_instance, "mgmt", None)
+                if mg:
+                    mg.reload()
+                ru = getattr(app_instance, "root", None)
+                ui = getattr(app_instance, "ui", None)
+                if ru and ui and hasattr(ui, "refresh_tree"):
+                    ru.after(0, ui.refresh_tree)
+            except Exception:
+                pass
+
+        new_mod.set_category_saved_callback(_on_cat_saved)
+    _log("모니터링 웹만 재시작 완료")
+    return True
+
+
 class ConvertPro3App:
 
     def __init__(self):
@@ -494,23 +562,37 @@ class ConvertPro3App:
 
     def restart_web_server(self):
         """
-        웹 서버(Flask) 재시작 — server.py 패치 후 사용.
-        프로그램 전체를 새 프로세스로 교체(os.execv 방식).
-        config/management 등 모든 파일 기반 상태는 그대로 유지됨.
+        monitoring/server.py 반영 시 HTTP(플라스크)만 재구동합니다.
+        메인 변환 프로그램 프로세스는 종료하지 않습니다.
         """
-        import subprocess
-        self.logger.log('[WebRestart] 프로그램을 재시작합니다...', level='INFO')
+        self.logger.log("[WebRestart] 모니터링 웹만 재시작(백그라운드)...", level="INFO")
+
+        def _worker():
+            try:
+                ok = restart_monitoring_web_only(self)
+                self.root.after(0, lambda o=ok: self._restart_web_banner_done(o))
+            except Exception as ex:
+                self.logger.log(f"[WebRestart] 실패: {ex}", level="ERROR")
+
+                def _show_err():
+                    messagebox.showerror("웹 재시작", str(ex), parent=self.root)
+
+                self.root.after(0, _show_err)
+
+        threading.Thread(target=_worker, daemon=True, name="MonitoringHotRestart").start()
+
+    def _restart_web_banner_done(self, ok: bool):
         try:
-            # 새 프로세스 먼저 띄우고 현재 프로세스 종료
-            subprocess.Popen(
-                [sys.executable] + sys.argv,
-                cwd=os.path.dirname(sys.executable) if getattr(sys, 'frozen', False)
-                    else os.path.dirname(os.path.abspath(__file__))
-            )
-        except Exception as e:
-            self.logger.log(f'[WebRestart] 재시작 실패: {e}', level='ERROR')
-            return
-        self.root.after(500, lambda: sys.exit(0))
+            self.ui.hide_web_restart_banner()
+            if ok:
+                messagebox.showinfo(
+                    "웹 재시작",
+                    "모니터링 웹 서버만 다시 시작했습니다.\n"
+                    "(변환 프로그램 창은 그대로입니다.)",
+                    parent=self.root,
+                )
+        except Exception:
+            pass
 
     def _start_monitoring_watcher(self):
         """

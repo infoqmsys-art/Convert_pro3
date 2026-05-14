@@ -37,10 +37,22 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import queue
 import secrets
 from functools import wraps
 
-from flask import Flask, jsonify, render_template, request, session, redirect, url_for, send_file
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    session,
+    stream_with_context,
+    url_for,
+)
 
 # ─────────────────────────────────────────
 #  경로 설정
@@ -65,10 +77,31 @@ MGMT_PATH   = _APP_ROOT / "management.json"
 AUTH_PATH   = _APP_ROOT / "web_auth.json"
 QM_REMOTE_PATH = _APP_ROOT / "qm_remote.json"
 QM_LOCAL_DB_PATH = _APP_ROOT / "qm_remote_state.sqlite3"
-_QM_DB_LOCK = threading.Lock()
 WEB_SHORTCUTS_PATH = _APP_ROOT / "web_shortcuts.json"
 CONVERT_ROOT = r"C:\data\Convertfile"
 PORT = 5050
+
+_QM_DB_LOCK = threading.Lock()
+
+# 대시보드 브라우저에 QM 원격 등 변경 알림 (SSE 구독자 큐)
+_DASH_SSE_LOCK = threading.Lock()
+_DASH_SSE_QUEUES: list[queue.Queue] = []
+
+
+def _broadcast_dashboard_sse(reason: str = "qm_remote") -> None:
+    """로그인된 브라우저의 /api/dashboard-events 연결에 이벤트 전송."""
+    line = (
+        "data: "
+        + json.dumps({"ok": True, "reason": reason}, ensure_ascii=False)
+        + "\n\n"
+    )
+    with _DASH_SSE_LOCK:
+        targets = list(_DASH_SSE_QUEUES)
+    for q in targets:
+        try:
+            q.put_nowait(line)
+        except queue.Full:
+            pass
 
 # CH0~CH7 = CSV 컬럼 인덱스 16~23 고정
 CH_COL_START = 16
@@ -654,6 +687,46 @@ def _fetch_external_485_tree(cfg: dict) -> list:
             company_node["sites"].append(site_node)
         tree.append(company_node)
     return tree
+
+
+# ─────────────────────────────────────────
+#  API: 대시보드 실시간 알림 (SSE)
+# ─────────────────────────────────────────
+
+
+@app.route("/api/dashboard-events")
+def api_dashboard_events():
+    """브라우저 EventSource. QM 원격 세션·비고 등 변경 시 전 구독자에게 푸시."""
+
+    def generate():
+        q: queue.Queue[str] = queue.Queue(maxsize=32)
+        with _DASH_SSE_LOCK:
+            _DASH_SSE_QUEUES.append(q)
+        try:
+            hello = json.dumps({"ok": True, "reason": "connected"}, ensure_ascii=False)
+            yield f"data: {hello}\n\n"
+            while True:
+                try:
+                    chunk = q.get(timeout=28)
+                    yield chunk
+                except queue.Empty:
+                    yield ": keep-alive\n\n"
+        finally:
+            with _DASH_SSE_LOCK:
+                try:
+                    _DASH_SSE_QUEUES.remove(q)
+                except ValueError:
+                    pass
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ─────────────────────────────────────────
@@ -2255,6 +2328,7 @@ def api_qm_remote_config_post():
     elif "desktop_api_token" in data and str(data.get("desktop_api_token") or "").strip():
         cur["desktop_api_token"] = str(data["desktop_api_token"]).strip()[:200]
     _save_qm_remote_config(cur)
+    _broadcast_dashboard_sse("qm_remote_config")
     tok = str(cur.get("desktop_api_token") or "").strip()
     return jsonify(
         {
@@ -2324,6 +2398,7 @@ def api_qm_remote_session_start():
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
     _qm_local_set_state(server_name, new_state)
+    _broadcast_dashboard_sse("qm_remote")
     return jsonify({"ok": True, "server_name": server_name, **new_state})
 
 
@@ -2352,6 +2427,7 @@ def api_qm_remote_session_stop():
     # 본인 세션이면 비밀번호 없이 즉시 종료
     if u == me:
         _qm_local_set_state(server_name, off_state)
+        _broadcast_dashboard_sse("qm_remote")
         return jsonify({"ok": True, "server_name": server_name})
 
     # 타인 세션 — 비밀번호 없이 요청하면 입력 요청
@@ -2379,6 +2455,7 @@ def api_qm_remote_session_stop():
             403,
         )
     _qm_local_set_state(server_name, off_state)
+    _broadcast_dashboard_sse("qm_remote")
     return jsonify({"ok": True, "server_name": server_name})
 
 
@@ -2481,6 +2558,7 @@ def api_qm_remote_note():
         return jsonify({"ok": False, "error": "등록된 서버가 아닙니다"}), 400
 
     _qm_local_set_note(server_name, note)
+    _broadcast_dashboard_sse("qm_remote")
     return jsonify({"ok": True, "server_name": server_name, "note": note})
 
 
@@ -2795,9 +2873,33 @@ def index():
 _server_started = False
 _server_lock = threading.Lock()
 
+_wsgi_daemon = None
+_wsgi_daemon_lock = threading.Lock()
+
+
+def shutdown_http_server(timeout_sec: float = 15.0) -> bool:
+    """실행 중인 WSGI 서버 종료 후 포트 반환 (Convert 프로그램은 유지)."""
+    global _wsgi_daemon
+    with _wsgi_daemon_lock:
+        srv = _wsgi_daemon
+    if srv is None:
+        return False
+
+    def _call_shutdown():
+        try:
+            srv.shutdown()
+        except Exception:
+            pass
+
+    thr = threading.Thread(target=_call_shutdown, daemon=True, name="MonitoringWSGI-Shutdown")
+    thr.start()
+    thr.join(timeout=timeout_sec)
+    time.sleep(0.35)
+    return True
+
 
 def start_server(open_browser: bool = False):
-    global _server_started
+    global _server_started, _wsgi_daemon
     with _server_lock:
         if _server_started:
             return
@@ -2806,16 +2908,23 @@ def start_server(open_browser: bool = False):
         import webbrowser
         threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{PORT}")).start()
     try:
-        try:
-            from waitress import serve
-            print(f"[MonitoringServer] waitress 서버 시작 → 0.0.0.0:{PORT}", flush=True)
-            serve(app, host="0.0.0.0", port=PORT, threads=8,
-                  channel_timeout=120, cleanup_interval=30)
-        except ImportError:
-            print(f"[MonitoringServer] waitress 미설치 → Flask 개발서버 사용 (pip install waitress 권장)", flush=True)
-            app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False, threaded=True)
+        from werkzeug.serving import make_server
+
+        httpd = make_server("0.0.0.0", PORT, app, threaded=True)
+        with _wsgi_daemon_lock:
+            _wsgi_daemon = httpd
+        print(
+            f"[MonitoringServer] Werkzeug(threaded) 0.0.0.0:{PORT} · 프로그램 유지 채 소프트 [웹 재시작]",
+            flush=True,
+        )
+        httpd.serve_forever()
     except OSError as e:
-        print(f"[MonitoringServer] 포트 {PORT} 바인딩 실패: {e}", file=sys.stderr)
+        print(f"[MonitoringServer] 포트 {PORT} 바인딩 실패: {e}", file=sys.stderr, flush=True)
+    finally:
+        with _wsgi_daemon_lock:
+            _wsgi_daemon = None
+        with _server_lock:
+            _server_started = False
 
 
 if __name__ == "__main__":

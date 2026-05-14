@@ -4,6 +4,7 @@
 ================================================================================
   WEB_VERSION 히스토리
   ─────────────────────────────────────────────────────────────────
+  v1.7.48 (2026-05-14)  QM 원격: 세션·비고·방설정 변경 시 SSE로 모든 브라우저에 즉시 반영
   v1.7.47 (2026-05-14)  헤더 타이틀 QM 통합관제 시스템·QM 원격 설정 UI 간소화·패치 배포 확인용
   v1.7.46 (2026-05-04)  QM 원격 설정: 표시 이름「이름 저장」·방 목록「방 목록 저장」분리(+ 로컬 백업)
   v1.7.45 (2026-05-04)  QM 원격: 방(메인서버) 목록 설정 복구 + 동일 사용자 1방만 사용(서버·데스크톱)·설정 화면 안내 재구성
@@ -233,6 +234,12 @@ header .meta{font-size:12px;color:var(--text-muted)}
 .nav-item{display:flex;align-items:center;gap:8px;padding:12px 18px;font-size:13px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s}
 .nav-item:hover{color:var(--text)}
 .nav-item.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
+/* QM 원격 실시간 업데이트: 다른 탭일 때 네비 표시 */
+.nav-item.nav-live-pending{position:relative;padding-right:22px}
+.nav-item.nav-live-pending::after{
+  content:"";position:absolute;top:10px;right:8px;width:7px;height:7px;border-radius:50%;
+  background:#f97316;box-shadow:0 0 0 2px var(--surface);
+}
 .nav-item svg{width:16px;height:16px;flex-shrink:0}
 .btn-mobile-menu{
   display:none;align-items:center;justify-content:center;flex-shrink:0;
@@ -287,6 +294,8 @@ header .meta{font-size:12px;color:var(--text-muted)}
     border-bottom-color:transparent;border-left-color:var(--accent);
     background:var(--accent-light);
   }
+  .app-nav .nav-item.nav-live-pending{padding-right:28px}
+  .app-nav .nav-item.nav-live-pending::after{top:14px;right:14px}
   #web-version-badge{display:none!important}
   .header-right .refresh-label{display:none}
 }
@@ -1512,7 +1521,7 @@ select.edit-input{appearance:auto;cursor:pointer}
      PATCH - 버그 수정 / 스타일 소폭 조정
    변경 내용은 파일 최상단 주석 히스토리에도 함께 기록하세요.
 ═══════════════════════════════════ */
-const WEB_VERSION = "1.7.47";
+const WEB_VERSION = "1.7.48";
 
 /* ─── 전역 fetch 래퍼: 401 수신 시 자동 로그인 리다이렉트 ─── */
 (function(){
@@ -1537,6 +1546,7 @@ const WEB_VERSION = "1.7.47";
 document.addEventListener("DOMContentLoaded", () => {
   const badge = document.getElementById("web-version-badge");
   if (badge) badge.textContent = "web v" + WEB_VERSION;
+  setupDashboardLiveUpdates();
 });
 
 /* ═══════════════════════════════════
@@ -1551,6 +1561,8 @@ let _currentPage =
   window.matchMedia && matchMedia("(max-width:640px)").matches ? "report" : "dashboard";
 let _selectedCompany = null;
 let _refreshTimer = null;
+/** /api/dashboard-events (QM 원격 등 서버 푸시) */
+let _dashEventSource = null;
 
 let _detailSite = null;
 
@@ -1873,6 +1885,44 @@ function _refreshDetailInfoIfIdle() {
   renderDetailPanelInfo(_detailSite);
 }
 
+function setupDashboardLiveUpdates() {
+  if (typeof EventSource === "undefined") return;
+  if (_dashEventSource) {
+    try {
+      _dashEventSource.close();
+    } catch (_e) {}
+    _dashEventSource = null;
+  }
+  try {
+    const es = new EventSource("/api/dashboard-events");
+    _dashEventSource = es;
+    es.onmessage = function (ev) {
+      let d = {};
+      try {
+        d = JSON.parse(ev.data || "{}");
+      } catch (_e) {}
+      if (!d.ok) return;
+      dashboardLiveApply(d.reason);
+    };
+  } catch (_e) {}
+}
+
+function dashboardLiveApply(reason) {
+  const r = String(reason || "");
+  if (r === "connected") return;
+  if (r !== "qm_remote" && r !== "qm_remote_config") return;
+  if (_currentPage === "qmremote") {
+    if (r === "qm_remote_config" && document.getElementById("qm-remote-view-settings")?.classList.contains("is-active")) {
+      qmRemoteLoadConfigForm();
+      return;
+    }
+    qmRemoteRefresh();
+    if (document.getElementById("qm-remote-view-list")?.classList.contains("is-active")) _qmRemoteStartAutoRefresh();
+  } else {
+    document.querySelector('.nav-item[data-page="qmremote"]')?.classList.add("nav-live-pending");
+  }
+}
+
 function switchPage(page) {
   _currentPage = page;
   // QM 원격이 아닌 탭으로 이동하면 자동 새로고침 타이머 중지
@@ -1882,6 +1932,7 @@ function switchPage(page) {
   const pageMap = { dashboard: "page-dashboard", manager: "page-manager", report: "page-report", qmremote: "page-qm-remote", shortcuts: "page-shortcuts" };
   document.getElementById(pageMap[page])?.classList.add("active");
   document.querySelector(`.nav-item[data-page="${page}"]`)?.classList.add("active");
+  if (page === "qmremote") document.querySelector('.nav-item[data-page="qmremote"]')?.classList.remove("nav-live-pending");
 
   if (page === "dashboard") {
     if (_treeData) renderDashboard(_treeData);

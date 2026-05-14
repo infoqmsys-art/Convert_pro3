@@ -483,14 +483,13 @@ class MainUI:
             pass
 
     def _do_web_restart(self):
-        """[웹 재시작] 버튼 → 프로그램 전체 재시작"""
-        from tkinter import messagebox
+        """[웹 재시작] — Flask HTTP만 재구동 · 변환 프로그램 유지."""
         ok = messagebox.askokcancel(
             "웹 서버 재시작",
-            "프로그램을 재시작해서 변경된 server.py를 반영합니다.\n\n"
-            "진행하시겠습니까?\n"
-            "(config·설정 데이터는 그대로 유지됩니다)",
-            parent=self.root
+            "변경된 server.py 등을 적용하기 위해 모니터링 웹(HTTP 서버)만 다시 시작합니다.\n\n"
+            "변환 프로그램 창은 닫히지 않습니다.\n\n"
+            "진행하시겠습니까?",
+            parent=self.root,
         )
         if ok:
             self.hide_web_restart_banner()
