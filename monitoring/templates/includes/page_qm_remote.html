@@ -1,0 +1,45 @@
+{# 탭: 큐엠 원격모니터링 #}
+<div class="page" id="page-qm-remote">
+    <div class="qm-remote-wrap">
+        <div class="qm-remote-inner">
+            <div id="qm-remote-view-list" class="qm-remote-view-list is-active">
+                <div class="qm-remote-toolbar">
+                    <button type="button" class="btn-save" onclick="qmRemoteRefresh(); _qmRemoteStartAutoRefresh();">새로고침</button>
+                    <span class="qm-remote-meta" id="qm-remote-meta"></span>
+                    <button type="button" class="btn-secondary qm-remote-btn-settings" onclick="qmRemoteShowSettings()">설정</button>
+                </div>
+                <div class="qm-remote-cards-scroll">
+                    <div id="qm-remote-cards-host"></div>
+                </div>
+            </div>
+            <div id="qm-remote-view-settings" class="qm-remote-view-settings">
+                <div class="qm-remote-settings-bar">
+                    <button type="button" class="btn-secondary" onclick="qmRemoteShowList()">← 뒤로</button>
+                </div>
+                <div class="qm-remote-panel">
+                    <h3 class="qm-remote-settings-heading">내 컴퓨터 이름 설정</h3>
+                    <div class="qm-remote-field" style="margin-bottom:10px">
+                        <input type="text" id="qm-my-pc-name" placeholder="예: 홍길동" maxlength="200" style="width:100%;max-width:560px;padding:8px 10px;font-size:13px;border:1px solid var(--border);border-radius:var(--radius-sm)">
+                    </div>
+                    <div class="qm-remote-edit-actions" style="margin-bottom:22px;margin-top:0">
+                        <button type="button" class="btn-save" onclick="qmRemoteSaveDisplayNameOnly()">저장</button>
+                    </div>
+                    <h3 class="qm-remote-settings-heading">원격 방 목록</h3>
+                    <table class="qm-remote-edit-table">
+                        <thead>
+                            <tr>
+                                <th style="width:88%">메인서버(방) 이름</th>
+                                <th style="width:12%">삭제</th>
+                            </tr>
+                        </thead>
+                        <tbody id="qm-server-rows"></tbody>
+                    </table>
+                    <div class="qm-remote-edit-actions">
+                        <button type="button" class="btn-secondary" onclick="qmRemoteAddServerRow()">방 추가</button>
+                        <button type="button" class="btn-save" onclick="qmRemoteSaveServerListOnly()">저장</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

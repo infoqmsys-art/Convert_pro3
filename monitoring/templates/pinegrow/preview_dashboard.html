@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pinegrow · 메인화면</title>
+    <link rel="stylesheet" href="../../static/css/app.css">
+    <style>body.qm-pinegrow-preview{margin:0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.qm-pinegrow-preview .page{display:flex!important;flex:1;min-height:0;flex-direction:column;overflow:hidden}
+</style>
+</head>
+<body class="qm-pinegrow-preview">
+<!-- 원본 파일: includes/page_dashboard.html · 편집 후 동일 내용을 원본에 복사하세요 -->
+<div class="page active" id="page-dashboard">
+    <div class="dash-split" id="dash-split-view">
+        <div class="dash-left">
+            <div class="dash-left-header">
+                <span style="display:flex;align-items:center;gap:8px">업체 목록 <span class="count" id="dash-company-count">0</span></span>
+                <button type="button" class="btn-dash-add" onclick="openAddCompanyModal()" title="config에 빈 업체 추가">+ 업체</button>
+            </div>
+            <div class="dash-company-list" id="dash-company-list"></div>
+        </div>
+        <div class="dash-right">
+            <div id="dash-site-list-view">
+                <div class="dash-dashboard-split" id="dash-right-body">
+                    <div class="dash-site-picker-col">
+                        <div class="dash-site-list-box">
+                            <div class="dash-site-list-box-scroll">
+                                <div class="dash-placeholder" id="dash-site-placeholder">좌측에서 업체를 선택하면 현장 목록이 표시됩니다</div>
+                                <div id="dash-site-table-wrap"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="dash-site-preview-col">
+                        <div class="dash-preview-empty" id="dash-preview-empty">업체·현장을 선택하면 개소 구조와 현장 정보가 여기에 표시됩니다</div>
+                        <div id="dash-preview-content" style="display:none"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="site-detail-view" style="display:none">
+                <div class="detail-inbar">
+                    <div class="detail-inbar-left">
+                        <button class="detail-back-btn" onclick="closeSiteDetail()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <polyline points="15 18 9 12 15 6"/>
+                            </svg>
+                            목록
+                        </button>
+                        <span class="detail-crumb-sep">/</span>
+                        <span class="detail-company-tag" id="detail-company-tag"></span>
+                        <span class="detail-crumb-sep">/</span>
+                        <span class="detail-site-title" id="detail-site-title"></span>
+                    </div>
+                </div>
+                <div class="detail-inbar-tabs">
+                    <button class="detail-tab active" onclick="switchDetailTab('info')" id="dtab-info">현장 정보</button>
+                    <button class="detail-tab" onclick="switchDetailTab('station')" id="dtab-station">카테고리</button>
+                </div>
+                <div class="detail-body">
+                    <div class="detail-panel active" id="dpanel-info"></div>
+                    <div class="detail-panel" id="dpanel-station"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

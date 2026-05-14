@@ -365,6 +365,15 @@ class ConvertPro3App:
                     if _files_differ(fpath, dst_root / 'templates' / rel):
                         need = True
                         tpl = True
+            ssrc = src_root / 'static'
+            if ssrc.exists():
+                for fpath in ssrc.rglob('*'):
+                    if not fpath.is_file():
+                        continue
+                    rel = fpath.relative_to(ssrc)
+                    if _files_differ(fpath, dst_root / 'static' / rel):
+                        need = True
+                        tpl = True
             return need, srv, tpl
 
         repo = Path(repo_path)
@@ -447,6 +456,14 @@ class ConvertPro3App:
             shutil.copytree(
                 str(templates_src),
                 str(dst_monitoring / 'templates'),
+                dirs_exist_ok=True
+            )
+
+        static_src = src_monitoring / 'static'
+        if static_src.exists():
+            shutil.copytree(
+                str(static_src),
+                str(dst_monitoring / 'static'),
                 dirs_exist_ok=True
             )
 
@@ -533,6 +550,15 @@ class ConvertPro3App:
                             template_changed = True
                             break
 
+            static_src = src_monitoring / 'static'
+            if static_src.exists() and not template_changed:
+                for f in static_src.rglob('*'):
+                    if f.is_file():
+                        rel = f.relative_to(static_src)
+                        if _files_differ(f, dst_monitoring / 'static' / rel):
+                            template_changed = True
+                            break
+
             if not server_changed and not template_changed:
                 return {'no_change': True, 'server_changed': False, 'template_changed': False}
 
@@ -550,6 +576,14 @@ class ConvertPro3App:
                 shutil.copytree(
                     str(templates_src),
                     str(dst_monitoring / 'templates'),
+                    dirs_exist_ok=True
+                )
+
+            static_src = src_monitoring / 'static'
+            if static_src.exists():
+                shutil.copytree(
+                    str(static_src),
+                    str(dst_monitoring / 'static'),
                     dirs_exist_ok=True
                 )
 

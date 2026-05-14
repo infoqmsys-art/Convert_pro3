@@ -228,7 +228,7 @@ def build():
     print()
 
     # ── monitoring 폴더 복사 (외부 편집 가능 파일) ──────────────────────
-    print_info("monitoring 폴더 복사 중... (server.py / templates)")
+    print_info("monitoring 폴더 복사 중... (server.py / templates / static)")
     monitoring_src = PROJECT_ROOT / "monitoring"
     monitoring_dst = DIST_DIR / "monitoring"
 
@@ -247,11 +247,16 @@ def build():
     if templates_src.exists():
         shutil.copytree(str(templates_src), str(monitoring_dst / "templates"))
 
+    # static 폴더 복사 (CSS 등)
+    static_src = monitoring_src / "static"
+    if static_src.exists():
+        shutil.copytree(str(static_src), str(monitoring_dst / "static"))
+
     # 패키지로 인식되도록 __init__.py 생성
     (monitoring_dst / "__init__.py").write_text("", encoding="utf-8")
 
     print_success("monitoring 폴더 복사 완료!")
-    print_info("  server.py / templates/ 를 직접 수정하면 재빌드 없이 웹 화면이 바뀝니다.")
+    print_info("  server.py / templates/ / static/ 를 직접 수정하면 재빌드 없이 웹 화면이 바뀝니다.")
     print()
 
     # 2. 업데이터 빌드

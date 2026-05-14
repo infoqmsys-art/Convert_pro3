@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pinegrow · 현황 리포트</title>
+    <link rel="stylesheet" href="../../static/css/app.css">
+    <style>body.qm-pinegrow-preview{margin:0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.qm-pinegrow-preview .page{display:flex!important;flex:1;min-height:0;flex-direction:column;overflow:hidden}
+</style>
+</head>
+<body class="qm-pinegrow-preview">
+<!-- 원본: includes/page_report.html · 편집 후 동일 내용을 원본에 복사 -->
+<div class="page" id="page-report">
+    <div class="report-wrap">
+        <div class="report-inner">
+            <header class="report-page-intro">
+                <h2 class="report-page-title">전체 현황리포트</h2>
+                <p class="report-page-lead">업체별 현장 상태·담당·메모를 표에서 확인합니다. 검색과 칩은 표·파일 저장에 동일하게 반영됩니다.</p>
+            </header>
+            <div class="report-toolbar-card">
+                <div class="report-toolbar">
+                    <input class="report-search" id="st-search" placeholder="현장·업체·메모 검색…" oninput="stFilter()">
+                    <div id="st-company-tabs" class="report-company-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+                    <button type="button" class="chip" id="st-chip-issue" onclick="stToggleChip('issue')">이슈 현장</button>
+                    <button type="button" class="chip" id="st-chip-memo" onclick="stToggleChip('memo')">메모 있음</button>
+                    <span class="report-count" id="st-count-label">0개 현장</span>
+                    <span class="report-actions-wrap" aria-label="파일 저장">
+                        <button type="button" class="btn-export" onclick="exportReportXlsx()" title="서버에서 .xlsx를 만들고, 라이브러리가 없으면 CSV로 받습니다">Excel·CSV 저장</button>
+                        <button type="button" class="btn-export btn-export-pdf" onclick="exportPdf()">PDF 저장</button>
+                        <button type="button" class="btn-secondary report-btn-print" onclick="exportReportPrint()">인쇄 / 브라우저 PDF</button>
+                    </span>
+                </div>
+            </div>
+            <div id="st-list"></div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

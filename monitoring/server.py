@@ -24,13 +24,14 @@ Convert Pro 3 에 내장된 실시간 모니터링 웹 대시보드.
   measurement_portal/      계측관리 통합시스템
 ================================================================================
 """
+import csv
 import json
 import os
 import sqlite3
 import sys
 import threading
 import time
-from io import BytesIO
+from io import BytesIO, StringIO
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -64,13 +65,16 @@ if getattr(sys, "frozen", False):
         # PyInstaller 번들 내 내장 파일 (폴백)
         _APP_ROOT = Path(sys.executable).parent
         _TEMPLATE_FOLDER = _meipass / "monitoring" / "templates"
+        _STATIC_FOLDER = _meipass / "monitoring" / "static"
     else:
         # exe 옆에 외부 파일로 존재 (편집 가능 모드)
         _APP_ROOT = _this_file.parent.parent
         _TEMPLATE_FOLDER = _this_file.parent / "templates"
+        _STATIC_FOLDER = _this_file.parent / "static"
 else:
     _APP_ROOT = Path(__file__).parent.parent
     _TEMPLATE_FOLDER = Path(__file__).parent / "templates"
+    _STATIC_FOLDER = Path(__file__).parent / "static"
 
 CONFIG_PATH = _APP_ROOT / "config.json"
 MGMT_PATH   = _APP_ROOT / "management.json"
@@ -134,7 +138,12 @@ def _load_auth_cfg() -> dict:
 
 _auth_cfg = _load_auth_cfg()
 
-app = Flask(__name__, template_folder=str(_TEMPLATE_FOLDER))
+app = Flask(
+    __name__,
+    template_folder=str(_TEMPLATE_FOLDER),
+    static_folder=str(_STATIC_FOLDER),
+    static_url_path="/static",
+)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key = _auth_cfg.get("secret_key") or secrets.token_hex(32)
 
@@ -2725,65 +2734,21 @@ def _xlsx_manager_cell(site: dict) -> str:
     return "미배정"
 
 
-@app.route("/api/report/export-xlsx", methods=["POST"])
-def api_report_export_xlsx():
-    try:
-        from openpyxl import Workbook
-        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-    except ImportError:
-        return jsonify(
-            {
-                "ok": False,
-                "error": "openpyxl 패키지가 필요합니다. pip install openpyxl",
-            }
-        ), 500
-
-    data = request.get_json(force=True, silent=True) or {}
+def _report_export_as_csv(data: dict) -> Response:
+    """openpyxl 미설치·엑셀 생성 실패 시에도 내보내기 가능하도록 UTF-8 BOM CSV."""
     groups = data.get("groups")
     if not isinstance(groups, list) or not groups:
         return jsonify({"ok": False, "error": "내보낼 데이터가 없습니다"}), 400
 
-    title = (data.get("title") or "큐엠 자동화 관리 프로그램 — 현장 현황").strip()
+    title = (data.get("title") or "QM 통합관제 시스템 — 현장 현황").strip()
     subtitle = (data.get("subtitle") or "").strip()
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "현장현황"
-
-    thin = Side(style="thin", color="FFCBD5E1")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    fill_banner = PatternFill(fill_type="solid", fgColor="FF2563EB")
-    fill_head = PatternFill(fill_type="solid", fgColor="FFE2E8F0")
-    fill_warn = PatternFill(fill_type="solid", fgColor="FFFFFBEB")
-    fill_err = PatternFill(fill_type="solid", fgColor="FFFEF2F2")
-    fill_white = PatternFill(fill_type="solid", fgColor="FFFFFFFF")
-
-    font_banner = Font(name="맑은 고딕", size=13, bold=True, color="FFFFFFFF")
-    font_title = Font(name="맑은 고딕", size=15, bold=True, color="FF0F172A")
-    font_sub = Font(name="맑은 고딕", size=10, color="FF64748B")
-    font_hdr = Font(name="맑은 고딕", size=10, bold=True, color="FF1D4ED8")
-    font_body = Font(name="맑은 고딕", size=10, color="FF0F172A")
-
-    al_top = Alignment(vertical="top", wrap_text=True)
-    al_banner = Alignment(vertical="center", horizontal="left", indent=1)
-    al_title = Alignment(vertical="center", horizontal="left")
-
-    r = 1
-    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
-    c = ws.cell(row=r, column=1, value=title)
-    c.font = font_title
-    c.alignment = al_title
-    r += 1
+    buf = StringIO()
+    wr = csv.writer(buf)
+    wr.writerow([title])
     if subtitle:
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
-        c = ws.cell(row=r, column=1, value=subtitle)
-        c.font = font_sub
-        c.alignment = al_title
-        r += 1
-    r += 1
-
-    headers = ["현장명", "담당자", "로거 현황", "프로그램", "특이사항"]
-
+        wr.writerow([subtitle])
+    wr.writerow([])
+    wr.writerow(["업체", "현장명", "담당자", "로거 현황", "프로그램", "특이사항"])
     for g in groups:
         if not isinstance(g, dict):
             continue
@@ -2791,66 +2756,150 @@ def api_report_export_xlsx():
         sites = g.get("sites")
         if not isinstance(sites, list):
             sites = []
-        n = len(sites)
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
-        c = ws.cell(row=r, column=1, value=f"{company}  ·  {n}개 현장")
-        c.fill = fill_banner
-        c.font = font_banner
-        c.alignment = al_banner
-        r += 1
-
-        for col, h in enumerate(headers, start=1):
-            hc = ws.cell(row=r, column=col, value=h)
-            hc.fill = fill_head
-            hc.font = font_hdr
-            hc.border = border
-            hc.alignment = Alignment(vertical="center", horizontal="left", wrap_text=True)
-        r += 1
-
         for site in sites:
             if not isinstance(site, dict):
                 continue
             stats = site.get("stats") if isinstance(site.get("stats"), dict) else {}
             logger_txt = _xlsx_logger_summary(stats)
-            mgr = _xlsx_manager_cell(site)
+            mgr = _xlsx_manager_cell(site).replace("\r\n", "\n").replace("\n", " · ")
             prog = (site.get("program") or "").strip() or "-"
             memo = (site.get("memo") or "").strip() or "-"
             site_name = site.get("site") or ""
+            wr.writerow([company, site_name, mgr, logger_txt, prog, memo])
+    payload = buf.getvalue().encode("utf-8-sig")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    fname = f"cp3_status_{stamp}.csv"
+    return Response(
+        payload,
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
-            row_fill = (
-                fill_err
-                if int(stats.get("unconverted") or 0) > 0
-                else fill_warn
-                if int(stats.get("delayed") or 0) > 0
-                else fill_white
-            )
 
-            vals = [site_name, mgr, logger_txt, prog, memo]
-            for col, val in enumerate(vals, start=1):
-                dc = ws.cell(row=r, column=col, value=val)
-                dc.font = font_body
-                dc.fill = row_fill
-                dc.border = border
-                dc.alignment = al_top
+@app.route("/api/report/export-xlsx", methods=["POST"])
+def api_report_export_xlsx():
+    data = request.get_json(force=True, silent=True) or {}
+    groups = data.get("groups")
+    if not isinstance(groups, list) or not groups:
+        return jsonify({"ok": False, "error": "내보낼 데이터가 없습니다"}), 400
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    except ImportError:
+        return _report_export_as_csv(data)
+
+    title = (data.get("title") or "큐엠 자동화 관리 프로그램 — 현장 현황").strip()
+    subtitle = (data.get("subtitle") or "").strip()
+
+    try:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "현장현황"
+
+        thin = Side(style="thin", color="FFCBD5E1")
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        fill_banner = PatternFill(fill_type="solid", fgColor="FF2563EB")
+        fill_head = PatternFill(fill_type="solid", fgColor="FFE2E8F0")
+        fill_warn = PatternFill(fill_type="solid", fgColor="FFFFFBEB")
+        fill_err = PatternFill(fill_type="solid", fgColor="FFFEF2F2")
+        fill_white = PatternFill(fill_type="solid", fgColor="FFFFFFFF")
+
+        font_banner = Font(name="맑은 고딕", size=13, bold=True, color="FFFFFFFF")
+        font_title = Font(name="맑은 고딕", size=15, bold=True, color="FF0F172A")
+        font_sub = Font(name="맑은 고딕", size=10, color="FF64748B")
+        font_hdr = Font(name="맑은 고딕", size=10, bold=True, color="FF1D4ED8")
+        font_body = Font(name="맑은 고딕", size=10, color="FF0F172A")
+
+        al_top = Alignment(vertical="top", wrap_text=True)
+        al_banner = Alignment(vertical="center", horizontal="left", indent=1)
+        al_title = Alignment(vertical="center", horizontal="left")
+
+        r = 1
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
+        c = ws.cell(row=r, column=1, value=title)
+        c.font = font_title
+        c.alignment = al_title
+        r += 1
+        if subtitle:
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
+            c = ws.cell(row=r, column=1, value=subtitle)
+            c.font = font_sub
+            c.alignment = al_title
             r += 1
         r += 1
 
-    ws.column_dimensions["A"].width = 30
-    ws.column_dimensions["B"].width = 24
-    ws.column_dimensions["C"].width = 28
-    ws.column_dimensions["D"].width = 22
-    ws.column_dimensions["E"].width = 40
+        headers = ["현장명", "담당자", "로거 현황", "프로그램", "특이사항"]
 
-    bio = BytesIO()
-    wb.save(bio)
-    bio.seek(0)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return send_file(
-        bio,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        as_attachment=True,
-        download_name=f"cp3_status_{stamp}.xlsx",
-    )
+        for g in groups:
+            if not isinstance(g, dict):
+                continue
+            company = (g.get("company") or "").strip()
+            sites = g.get("sites")
+            if not isinstance(sites, list):
+                sites = []
+            n = len(sites)
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
+            c = ws.cell(row=r, column=1, value=f"{company}  ·  {n}개 현장")
+            c.fill = fill_banner
+            c.font = font_banner
+            c.alignment = al_banner
+            r += 1
+
+            for col, h in enumerate(headers, start=1):
+                hc = ws.cell(row=r, column=col, value=h)
+                hc.fill = fill_head
+                hc.font = font_hdr
+                hc.border = border
+                hc.alignment = Alignment(vertical="center", horizontal="left", wrap_text=True)
+            r += 1
+
+            for site in sites:
+                if not isinstance(site, dict):
+                    continue
+                stats = site.get("stats") if isinstance(site.get("stats"), dict) else {}
+                logger_txt = _xlsx_logger_summary(stats)
+                mgr = _xlsx_manager_cell(site)
+                prog = (site.get("program") or "").strip() or "-"
+                memo = (site.get("memo") or "").strip() or "-"
+                site_name = site.get("site") or ""
+
+                row_fill = (
+                    fill_err
+                    if int(stats.get("unconverted") or 0) > 0
+                    else fill_warn
+                    if int(stats.get("delayed") or 0) > 0
+                    else fill_white
+                )
+
+                vals = [site_name, mgr, logger_txt, prog, memo]
+                for col, val in enumerate(vals, start=1):
+                    dc = ws.cell(row=r, column=col, value=val)
+                    dc.font = font_body
+                    dc.fill = row_fill
+                    dc.border = border
+                    dc.alignment = al_top
+                r += 1
+            r += 1
+
+        ws.column_dimensions["A"].width = 30
+        ws.column_dimensions["B"].width = 24
+        ws.column_dimensions["C"].width = 28
+        ws.column_dimensions["D"].width = 22
+        ws.column_dimensions["E"].width = 40
+
+        bio = BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return send_file(
+            bio,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=f"cp3_status_{stamp}.xlsx",
+        )
+    except Exception:
+        return _report_export_as_csv(data)
 
 
 # ─────────────────────────────────────────

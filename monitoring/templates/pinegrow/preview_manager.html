@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pinegrow · 담당자 설정</title>
+    <link rel="stylesheet" href="../../static/css/app.css">
+    <style>body.qm-pinegrow-preview{margin:0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.qm-pinegrow-preview .page{display:flex!important;flex:1;min-height:0;flex-direction:column;overflow:hidden}
+</style>
+</head>
+<body class="qm-pinegrow-preview">
+<!-- 원본 파일: includes/page_manager.html · 편집 후 동일 내용을 원본에 복사하세요 -->
+<div class="page" id="page-manager">
+    <div class="mgr-page-wrap">
+        <div class="mgr-page-inner">
+            <div class="detail-section" id="qm-section">
+                <div class="section-head">
+                    <div class="section-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                        QM 관리자
+                    </div>
+                    <button class="btn-edit" onclick="toggleQmAdd()">+ 추가</button>
+                </div>
+                <div class="mgr-add-form" id="qm-add-form">
+                    <div class="mgr-add-row">
+                        <input class="edit-input" id="qm-add-name" placeholder="이름">
+                        <input class="edit-input" id="qm-add-title" placeholder="직책">
+                        <input class="edit-input" id="qm-add-phone" placeholder="연락처">
+                    </div>
+                    <div class="edit-actions">
+                        <button class="btn-secondary" onclick="toggleQmAdd()">취소</button>
+                        <button class="btn-primary" onclick="saveQmManager()">저장</button>
+                    </div>
+                </div>
+                <div class="mgr-list" id="qm-list"></div>
+            </div>
+            <div class="detail-section" id="prog-types-section">
+                <div class="section-head">
+                    <div class="section-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2"/>
+                            <line x1="8" y1="21" x2="16" y2="21"/>
+                            <line x1="12" y1="17" x2="12" y2="21"/>
+                        </svg>
+                        사용 프로그램 종류
+                    </div>
+                </div>
+                <div id="prog-types-editor"></div>
+            </div>
+            <div class="mgr-split">
+                <div class="mgr-left">
+                    <div class="detail-section">
+                        <div class="section-head">
+                            <div class="section-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                                    <polyline points="9 22 9 12 15 12 15 22"/>
+                                </svg>
+                                업체 목록
+                            </div>
+                        </div>
+                        <div class="company-nav-list" id="mgr-company-list"></div>
+                    </div>
+                </div>
+                <div class="mgr-right">
+                    <div class="detail-section mgr-detail-panel" id="mgr-company-detail">
+                        <div class="empty-state" id="mgr-placeholder">좌측에서 업체를 선택하세요</div>
+                        <div id="mgr-company-content" style="display:none"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
