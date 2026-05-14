@@ -319,14 +319,13 @@ class ConvertPro3App:
 
     def do_web_patch(self, repo_path: str, status_cb=None) -> dict:
         """
-        git pull + 필요 시 monitoring/ 실행 폴더 동기화.
-        git 이 최신이라도 실행 폴더 monitoring 과 저장소 내용이 다르면 복사합니다.
+        선택한 경로 아래 monitoring/ 과 실행 폴더 비교 후, 다를 때만 복사합니다.
+        (자동 git pull 없음 — 최신 받기는 해당 폴더에서 미리 하거나 ZIP 패치를 쓰세요.)
 
-        repo_path : Convert_pro3 소스 저장소 루트 경로 (git clone 위치)
+        repo_path : Convert_pro3 프로젝트 루트 (monitoring/ 포함)
         status_cb : 진행 상황 문자열 콜백 (선택)
         반환값    : {'server_changed': bool, 'template_changed': bool, 'no_change': bool}
         """
-        import subprocess
         import shutil
         from pathlib import Path
 
@@ -386,62 +385,16 @@ class ConvertPro3App:
                 "올바른 Convert_pro3 저장소 폴더를 선택하세요."
             )
 
-        # ① git pull — 브랜치 명시 (upstream 미설정된 클론에서도 동작)
-        br_cmd = subprocess.run(
-            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-            cwd=str(repo),
-            capture_output=True,
-            text=True,
-            timeout=10,
-            encoding='utf-8',
-            errors='replace',
-        )
-        branch = (br_cmd.stdout or '').strip()
-        if not branch or branch == 'HEAD':
-            branch = 'main'
-
-        _status(f'git pull 실행 중... (origin {branch})')
-        result = subprocess.run(
-            ['git', 'pull', 'origin', branch],
-            cwd=str(repo),
-            capture_output=True,
-            text=True,
-            timeout=120,
-            encoding='utf-8',
-            errors='replace'
-        )
-        if result.returncode != 0 and branch == 'main':
-            _status('origin main 실패 — origin master 재시도...')
-            result = subprocess.run(
-                ['git', 'pull', 'origin', 'master'],
-                cwd=str(repo),
-                capture_output=True,
-                text=True,
-                timeout=120,
-                encoding='utf-8',
-                errors='replace'
-            )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"git pull 실패:\n{result.stderr.strip() or result.stdout.strip()}"
-            )
-
-        pull_output = result.stdout.strip()
-        _status(f'git pull 완료: {pull_output[:120]}')
-
+        _status("monitoring/ 내용 비교 중…")
         need_sync, server_changed, template_changed = _monitoring_differs(
             src_monitoring, dst_monitoring
         )
 
         if not need_sync:
-            lo = pull_output.lower()
-            if 'already up to date' in lo or 'already up-to-date' in lo:
-                _status('저장소 최신 · 실행 폴더 monitoring 과 동일')
-            else:
-                _status('이번 pull 에 monitoring 변경 없음 · 실행 폴더 동일')
+            _status("선택 폴더와 실행 폴더 monitoring/ 내용이 동일합니다.")
             return {'no_change': True, 'server_changed': False, 'template_changed': False}
 
-        # ② monitoring/ 복사
+        # monitoring/ 복사
         _status('monitoring/ 실행 폴더로 복사 중...')
         dst_monitoring.mkdir(parents=True, exist_ok=True)
         (dst_monitoring / 'templates').mkdir(parents=True, exist_ok=True)

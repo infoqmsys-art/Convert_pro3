@@ -1886,33 +1886,89 @@ class MainUI:
         threading.Thread(target=check_thread, daemon=True).start()
 
     def _start_web_patch(self):
-        """웹 패치 방식 선택 — git 또는 GitHub ZIP"""
-        import threading, shutil, subprocess
-        from pathlib import Path
+        """웹 패치 — 로컬 폴더 동기화 또는 GitHub ZIP (자동 git pull 없음)."""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("웹 패치")
+        dlg.geometry("400x200")
+        dlg.resizable(False, False)
+        dlg.transient(self.root)
+        dlg.grab_set()
+        self._center_popup_on_parent(dlg)
 
-        # git 설치 여부 자동 확인
-        git_available = False
-        try:
-            r = subprocess.run(['git', '--version'], capture_output=True, timeout=5)
-            git_available = (r.returncode == 0)
-        except Exception:
-            pass
+        tk.Label(
+            dlg,
+            text="방법을 선택하세요",
+            font=("맑은 고딕", 11, "bold"),
+            fg="#2C3E50",
+        ).pack(pady=(18, 6))
 
-        if git_available:
-            self._start_web_patch_git()
-        else:
+        tk.Label(
+            dlg,
+            text="· 로컬: 프로젝트 폴더의 monitoring/ 을 그대로 실행 경로로 복사\n"
+                 "· ZIP: 원격 저장소 패키지로 받기 (git 불필요)\n\n"
+                 "두 방식 모두 자동 git pull 은 하지 않습니다.",
+            font=("맑은 고딕", 9),
+            fg="#555",
+            justify="left",
+        ).pack(pady=(0, 14))
+
+        btn_row = tk.Frame(dlg)
+        btn_row.pack()
+
+        def choose_folder():
+            dlg.destroy()
+            self._start_web_patch_folder()
+
+        def choose_zip():
+            dlg.destroy()
             self._start_web_patch_zip()
 
-    def _start_web_patch_git(self):
-        """웹 패치 — git pull + monitoring/ 복사"""
+        tk.Button(
+            btn_row,
+            text="로컬 폴더에서 복사",
+            command=choose_folder,
+            font=("맑은 고딕", 10, "bold"),
+            bg="#2980B9",
+            fg="white",
+            relief="flat",
+            padx=12,
+            pady=8,
+            cursor="hand2",
+        ).pack(side="left", padx=4)
+
+        tk.Button(
+            btn_row,
+            text="GitHub ZIP",
+            command=choose_zip,
+            font=("맑은 고딕", 10),
+            bg="#ecf0f1",
+            fg="#34495e",
+            relief="flat",
+            padx=12,
+            pady=8,
+            cursor="hand2",
+        ).pack(side="left", padx=4)
+
+        tk.Button(
+            dlg,
+            text="취소",
+            command=dlg.destroy,
+            font=("맑은 고딕", 9),
+            fg="#666",
+            relief="flat",
+            pady=(10, 0),
+        ).pack()
+
+    def _start_web_patch_folder(self):
+        """웹 패치 — monitoring/ 디렉터리 비교·복사만 수행."""
         import threading
 
         # 저장소 경로 확인
         repo_path = self.app.config.get_web_patch_repo_path()
         if not repo_path:
             repo_path = filedialog.askdirectory(
-                title="git 저장소 폴더 선택 (Convert_pro3 소스 루트)",
-                parent=self.root
+                title="프로젝트 루트 선택 (Convert_pro3 폴더 — 그 안의 monitoring/ 이 복사됩니다)",
+                parent=self.root,
             )
             if not repo_path:
                 return
@@ -1933,7 +1989,7 @@ class MainUI:
         tk.Label(header, text="웹 파일 최신화 중...",
                  font=("맑은 고딕", 11, "bold"), bg="#2980B9", fg="white").pack(pady=12)
 
-        status_var = tk.StringVar(value="git pull 실행 중...")
+        status_var = tk.StringVar(value="monitoring 폴더 확인 중...")
         tk.Label(dlg, textvariable=status_var,
                  font=("맑은 고딕", 9), fg="#444").pack(pady=10)
 
@@ -1976,8 +2032,10 @@ class MainUI:
             elif result.get('no_change'):
                 messagebox.showinfo(
                     "웹 패치",
-                    "저장소는 최신이고 실행 폴더 monitoring 도 동일합니다.\n\n"
-                    "화면이 옛날이면 다른 경로의 EXE 를 쓰는지, 브라우저 새로고침(Ctrl+F5)을 해 보세요.",
+                    "선택한 폴더의 monitoring 과 실행 폴더 내용이 동일합니다.\n\n"
+                    "다른 버전으로 맞추려면 해당 폴더에서 미리 새 파일을 놓거나,\n"
+                    "GitHub ZIP 웹 패치 흐름을 사용하세요.\n\n"
+                    "브라우저가 옛 화면이면 Ctrl+F5 로 강력 새로고침 해 보세요.",
                     parent=self.root,
                 )
             else:
@@ -1989,7 +2047,7 @@ class MainUI:
             messagebox.showerror(
                 "웹 패치 실패",
                 f"오류가 발생했습니다.\n\n{err}\n\n"
-                "git 설치 여부와 저장소 경로를 확인하세요.",
+                "프로젝트 루트에 monitoring 폴더가 있는지 경로를 확인하세요.",
                 parent=self.root
             )
 
