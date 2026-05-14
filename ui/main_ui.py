@@ -1975,7 +1975,12 @@ class MainUI:
                     parent=self.root
                 )
             elif result.get('no_change'):
-                messagebox.showinfo("웹 패치", "이미 최신 상태입니다.", parent=self.root)
+                messagebox.showinfo(
+                    "웹 패치",
+                    "저장소는 최신이고 실행 폴더 monitoring 도 동일합니다.\n\n"
+                    "화면이 옛날이면 다른 경로의 EXE 를 쓰는지, 브라우저 새로고침(Ctrl+F5)을 해 보세요.",
+                    parent=self.root,
+                )
             else:
                 messagebox.showinfo("웹 패치 완료", "패치가 완료되었습니다.", parent=self.root)
 
@@ -2040,7 +2045,12 @@ class MainUI:
                     "패치 완료!\n\ntemplates/가 변경되었습니다.\n"
                     "브라우저를 새로고침하면 즉시 반영됩니다.", parent=self.root)
             elif result.get('no_change'):
-                messagebox.showinfo("웹 패치", "이미 최신 상태입니다.", parent=self.root)
+                messagebox.showinfo(
+                    "웹 패치",
+                    "저장소는 최신이고 실행 폴더 monitoring 도 동일합니다.\n\n"
+                    "화면이 옛날이면 다른 경로의 EXE 를 쓰는지, 브라우저 새로고침(Ctrl+F5)을 해 보세요.",
+                    parent=self.root,
+                )
             else:
                 messagebox.showinfo("웹 패치 완료", "패치가 완료되었습니다.", parent=self.root)
 

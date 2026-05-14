@@ -1,7 +1,28 @@
 """
-Convert Pro 3 - 모니터링 웹 대시보드 서버
-- 직접 실행: python monitoring/server.py  -> 브라우저 자동 열림
-- 앱 통합:   Convert_pro3.py 에서 start_server() 를 daemon thread로 호출
+================================================================================
+QM 자동화 관제시스템
+================================================================================
+Convert Pro 3 에 내장된 실시간 모니터링 웹 대시보드.
+변환 완료된 CSV 데이터를 브라우저에서 바로 확인할 수 있도록 Flask 로 제공한다.
+
+주요 기능
+---------
+- 변환본 CSV 파일의 최신값·추이 실시간 조회
+- 장비·현장별 상태 현황판
+- Convert_pro3.py 앱과 동일 프로세스 내 daemon 스레드로 동작
+- 로그인 세션 기반 접근 제어
+
+실행 방법
+---------
+  직접 실행 : python monitoring/server.py   (브라우저 자동 열림)
+  앱 통합   : Convert_pro3.py 에서 start_server() 를 daemon thread 로 호출
+
+프로젝트 내 위치
+----------------
+  Convert_pro3.py          컨버트 프로그램 (진입점)
+  monitoring/server.py     ← 이 파일 (QM 자동화 관제시스템)
+  measurement_portal/      계측관리 통합시스템
+================================================================================
 """
 import json
 import os
@@ -2327,29 +2348,36 @@ def api_qm_remote_session_stop():
     if cur["status"] != "ON":
         return jsonify({"ok": True, "already_off": True, "server_name": server_name})
     u = cur["user"]
-    if u != me:
-        stored = _qm_effective_session_admin_pw(cfg.get("session_admin_password"))
-        if not admin_pw:
-            return (
-                jsonify(
-                    {
-                        "ok": False,
-                        "error": "다른 사용자가 사용 중입니다. 강제 종료 비밀번호를 입력하세요.",
-                        "need_admin": True,
-                        "busy_user": u,
-                    }
-                ),
-                403,
-            )
-        try:
-            pw_ok = len(admin_pw) == len(stored) and secrets.compare_digest(admin_pw, stored)
-        except (TypeError, ValueError):
-            pw_ok = False
-        if not pw_ok:
-            return (
-                jsonify({"ok": False, "error": "관리자 비밀번호가 올바르지 않습니다"}),
-                403,
-            )
+
+    # 본인 세션이면 비밀번호 없이 즉시 종료
+    if u == me:
+        _qm_local_set_state(server_name, off_state)
+        return jsonify({"ok": True, "server_name": server_name})
+
+    # 타인 세션 — 비밀번호 없이 요청하면 입력 요청
+    if not admin_pw:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "사용 종료를 위해 비밀번호를 입력하세요.",
+                    "need_admin": True,
+                    "busy_user": u,
+                }
+            ),
+            403,
+        )
+    # 비밀번호 검증 — 일치하면 종료 허용
+    stored = _qm_effective_session_admin_pw(cfg.get("session_admin_password"))
+    try:
+        pw_ok = len(admin_pw) == len(stored) and secrets.compare_digest(admin_pw, stored)
+    except (TypeError, ValueError):
+        pw_ok = False
+    if not pw_ok:
+        return (
+            jsonify({"ok": False, "error": "비밀번호가 올바르지 않습니다."}),
+            403,
+        )
     _qm_local_set_state(server_name, off_state)
     return jsonify({"ok": True, "server_name": server_name})
 
@@ -2408,6 +2436,9 @@ def api_qm_remote_status():
     cfg = _load_qm_remote_config()
     servers = cfg.get("servers") or []
     checked = datetime.now().isoformat(timespec="seconds")
+    pc_id = _qm_client_pc_id()
+    timeout = float(cfg.get("request_timeout_sec") or 5)
+    my_user = _qm_session_effective_user(cfg, pc_id, timeout)
     try:
         slist = [str(s).strip() for s in servers if isinstance(s, str) and str(s).strip()]
         states = _qm_local_all_states(slist)
@@ -2419,6 +2450,7 @@ def api_qm_remote_status():
                 "checked_at": checked,
                 "storage": "local_sqlite",
                 "fetch_error": "",
+                "my_user": my_user,
                 "rows": rows,
             }
         )
@@ -2430,6 +2462,7 @@ def api_qm_remote_status():
                 "checked_at": checked,
                 "storage": "local_sqlite",
                 "fetch_error": str(e)[:200],
+                "my_user": my_user,
                 "rows": [],
             }
         )

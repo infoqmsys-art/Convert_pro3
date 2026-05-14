@@ -1,9 +1,10 @@
 <!--
 ================================================================================
-  Convert Pro 3 - 현장관리 웹 (monitoring/templates/index.html)
+  QM 통합관제 시스템 웹 (monitoring/templates/index.html)
 ================================================================================
   WEB_VERSION 히스토리
   ─────────────────────────────────────────────────────────────────
+  v1.7.47 (2026-05-14)  헤더 타이틀 QM 통합관제 시스템·QM 원격 설정 UI 간소화·패치 배포 확인용
   v1.7.46 (2026-05-04)  QM 원격 설정: 표시 이름「이름 저장」·방 목록「방 목록 저장」분리(+ 로컬 백업)
   v1.7.45 (2026-05-04)  QM 원격: 방(메인서버) 목록 설정 복구 + 동일 사용자 1방만 사용(서버·데스크톱)·설정 화면 안내 재구성
   v1.7.44 (2026-05-04)  QM 원격: Firebase 제거 — 로컬 SQLite 전용·qm_remote.json 단순화
@@ -173,7 +174,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Convert Pro 3 - 현장관리</title>
+<title>QM 통합관제 시스템</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <style>
 :root {
@@ -1210,9 +1211,9 @@ select.edit-input{appearance:auto;cursor:pointer}
 <header>
   <div class="header-left">
     <button type="button" class="btn-mobile-menu" id="btn-mobile-menu" aria-expanded="false" aria-controls="main-app-nav" title="대시보드·관리·바로가기 메뉴">메뉴</button>
-    <div class="app-logo">CP</div>
+    <div class="app-logo">QM</div>
     <div class="header-titles">
-      <h1>Convert Pro 3</h1>
+      <h1>QM 통합관제 시스템</h1>
       <div class="meta" id="last-updated">마지막 갱신: -</div>
     </div>
     <span id="web-version-badge" style="font-size:11px;color:var(--text-placeholder);margin-left:8px;font-family:'Consolas',monospace;line-height:1;margin-top:2px"></span>
@@ -1408,7 +1409,7 @@ select.edit-input{appearance:auto;cursor:pointer}
     <div class="qm-remote-inner">
       <div id="qm-remote-view-list" class="qm-remote-view-list is-active">
         <div class="qm-remote-toolbar">
-          <button type="button" class="btn-save" onclick="qmRemoteRefresh()">새로고침</button>
+          <button type="button" class="btn-save" onclick="qmRemoteRefresh(); _qmRemoteStartAutoRefresh();">새로고침</button>
           <span class="qm-remote-meta" id="qm-remote-meta"></span>
           <button type="button" class="btn-secondary qm-remote-btn-settings" onclick="qmRemoteShowSettings()">설정</button>
         </div>
@@ -1421,23 +1422,14 @@ select.edit-input{appearance:auto;cursor:pointer}
           <button type="button" class="btn-secondary" onclick="qmRemoteShowList()">← 뒤로</button>
         </div>
         <div class="qm-remote-panel">
-          <div class="qm-remote-scope-note" role="note">
-            <strong>원격 사용 모니터링 구조</strong>
-            아래 <strong>원격 방(메인서버)</strong> 줄마다 카드가 생깁니다. 누가 어느 방을 쓰는지 같은 보드에서 봅니다.
-            <strong>내 이름</strong>만 이 브라우저·기기마다 저장되고, 방 목록은 모두에게 공통입니다(한 번 수정하면 전체 화면에 반영).
-            같은 사람(여기 적은 이름·이 기기)은 <strong>동시에 한 방만</strong> 사용할 수 있어 다른 방을 쓰려면 먼저 종료해야 합니다.
-          </div>
-          <h3 class="qm-remote-settings-heading">내 이름 (이 기기만)</h3>
-          <p class="qm-remote-hint" style="margin:0 0 12px">서버에 이 브라우저·기기별로 저장됩니다(<code style="font-size:11px">qm_remote_state.sqlite3</code>). 방 목록과는 무관합니다.</p>
+          <h3 class="qm-remote-settings-heading">내 컴퓨터 이름 설정</h3>
           <div class="qm-remote-field" style="margin-bottom:10px">
-            <label for="qm-my-pc-name">표시 이름</label>
-            <input type="text" id="qm-my-pc-name" placeholder="예: 홍길동 / 경기팀 노트북" maxlength="200" style="width:100%;max-width:560px;padding:8px 10px;font-size:13px;border:1px solid var(--border);border-radius:var(--radius-sm)">
+            <input type="text" id="qm-my-pc-name" placeholder="예: 홍길동" maxlength="200" style="width:100%;max-width:560px;padding:8px 10px;font-size:13px;border:1px solid var(--border);border-radius:var(--radius-sm)">
           </div>
           <div class="qm-remote-edit-actions" style="margin-bottom:22px;margin-top:0">
-            <button type="button" class="btn-save" onclick="qmRemoteSaveDisplayNameOnly()">이름 저장</button>
+            <button type="button" class="btn-save" onclick="qmRemoteSaveDisplayNameOnly()">저장</button>
           </div>
-          <h3 class="qm-remote-settings-heading">원격 방 목록 (전체 공통)</h3>
-          <p class="qm-remote-hint" style="margin:0 0 12px"><code style="font-size:11px">qm_remote.json</code> 에 저장되어 모두에게 같은 카드 목록으로 보입니다. 표시 이름과는 따로 「방 목록 저장」 하세요.</p>
+          <h3 class="qm-remote-settings-heading">원격 방 목록</h3>
           <table class="qm-remote-edit-table">
             <thead>
               <tr>
@@ -1449,7 +1441,7 @@ select.edit-input{appearance:auto;cursor:pointer}
           </table>
           <div class="qm-remote-edit-actions">
             <button type="button" class="btn-secondary" onclick="qmRemoteAddServerRow()">방 추가</button>
-            <button type="button" class="btn-save" onclick="qmRemoteSaveServerListOnly()">방 목록 저장</button>
+            <button type="button" class="btn-save" onclick="qmRemoteSaveServerListOnly()">저장</button>
           </div>
         </div>
       </div>
@@ -1520,7 +1512,7 @@ select.edit-input{appearance:auto;cursor:pointer}
      PATCH - 버그 수정 / 스타일 소폭 조정
    변경 내용은 파일 최상단 주석 히스토리에도 함께 기록하세요.
 ═══════════════════════════════════ */
-const WEB_VERSION = "1.7.46";
+const WEB_VERSION = "1.7.47";
 
 /* ─── 전역 fetch 래퍼: 401 수신 시 자동 로그인 리다이렉트 ─── */
 (function(){
@@ -1883,6 +1875,8 @@ function _refreshDetailInfoIfIdle() {
 
 function switchPage(page) {
   _currentPage = page;
+  // QM 원격이 아닌 탭으로 이동하면 자동 새로고침 타이머 중지
+  if (page !== "qmremote") _qmRemoteStopAutoRefresh();
   document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   const pageMap = { dashboard: "page-dashboard", manager: "page-manager", report: "page-report", qmremote: "page-qm-remote", shortcuts: "page-shortcuts" };
@@ -1958,11 +1952,42 @@ function qmRemoteSaveMyPcName() {
   });
 }
 
+// QM 원격 전용 자동 새로고침 타이머
+let _qmRemoteAutoTimer = null;
+let _qmRemoteCountdownTimer = null;
+const QM_REMOTE_AUTO_REFRESH_SEC = 15; // 자동 새로고침 주기 (초)
+
+function _qmRemoteStartAutoRefresh() {
+  _qmRemoteStopAutoRefresh();
+  let remaining = QM_REMOTE_AUTO_REFRESH_SEC;
+
+  const tick = () => {
+    const meta = document.getElementById("qm-remote-meta");
+    if (meta) {
+      const t = meta.dataset.lastRefresh || "";
+      meta.textContent = (t ? "마지막 갱신: " + t + " · " : "") + remaining + "초 후 자동 새로고침";
+    }
+    remaining--;
+    if (remaining < 0) {
+      qmRemoteRefresh();
+      remaining = QM_REMOTE_AUTO_REFRESH_SEC;
+    }
+  };
+  tick();
+  _qmRemoteCountdownTimer = setInterval(tick, 1000);
+}
+
+function _qmRemoteStopAutoRefresh() {
+  if (_qmRemoteAutoTimer) { clearInterval(_qmRemoteAutoTimer); _qmRemoteAutoTimer = null; }
+  if (_qmRemoteCountdownTimer) { clearInterval(_qmRemoteCountdownTimer); _qmRemoteCountdownTimer = null; }
+}
+
 function qmRemoteShowList() {
   qmRemotePersistClientPcId();
   document.getElementById("qm-remote-view-settings")?.classList.remove("is-active");
   document.getElementById("qm-remote-view-list")?.classList.add("is-active");
   qmRemoteRefresh();
+  _qmRemoteStartAutoRefresh();
 }
 
 function qmRemoteShowSettings() {
@@ -1971,10 +1996,15 @@ function qmRemoteShowSettings() {
   qmRemoteLoadConfigForm();
 }
 
+// 현재 접속자 식별자 (status API 응답의 my_user)
+let _qmMyUser = "";
+
 function qmRemoteRenderCards(payload) {
   const host = document.getElementById("qm-remote-cards-host");
   const meta = document.getElementById("qm-remote-meta");
   if (!host) return;
+  // 내 사용자 정보 갱신
+  if (payload.my_user != null) _qmMyUser = String(payload.my_user);
   const rows = payload.rows || [];
   if (!rows.length) {
     host.innerHTML =
@@ -1988,12 +2018,17 @@ function qmRemoteRenderCards(payload) {
           const on = r.status === "ON" || st === "사용 중";
           const noteVal = r.note != null ? String(r.note) : "";
           const user = (r.user || "").trim();
+          const isMySession = on && _qmMyUser && user === _qmMyUser;
           const lineOn =
             "🟢 사용 중" +
-            (user ? " (" + escHtml(user) + ")" : "") +
+            (user ? " (" + escHtml(user) + (isMySession ? " — 나" : "") + ")" : "") +
             (r.elapsed ? " — " + escHtml(r.elapsed) : "");
           const lineOff = "⚪ 사용 가능";
           const startDisp = (r.start_display != null && r.start_display !== "") ? String(r.start_display) : "—";
+          // 본인 세션: 비밀번호 없이 종료 / 타인 세션: 비밀번호 입력 후 종료
+          const stopBtn = isMySession
+            ? '<button type="button" class="btn-danger" onclick="qmRemoteSessionStopOwn(this)">사용 종료</button>'
+            : '<button type="button" class="btn-danger" style="opacity:.75" onclick="qmRemoteSessionStopFromCard(this)">강제 종료</button>';
           return (
             '<article class="qm-card" data-srv="' +
             escAttr(r.server_name || "") +
@@ -2018,9 +2053,7 @@ function qmRemoteRenderCards(payload) {
             '<button type="button" class="btn-secondary" style="padding:6px 12px;font-size:12px;white-space:nowrap" onclick="qmRemoteSaveNote(this)">저장</button>' +
             "</div></div>" +
             '<div class="qm-card-actions">' +
-            (on
-              ? '<button type="button" class="btn-danger" onclick="qmRemoteSessionStopFromCard(this)">사용 종료</button>'
-              : '<button type="button" class="btn-save" onclick="qmRemoteSessionStartFromCard(this)">사용 시작</button>') +
+            (on ? stopBtn : '<button type="button" class="btn-save" onclick="qmRemoteSessionStartFromCard(this)">사용 시작</button>') +
             "</div></article>"
           );
         })
@@ -2041,11 +2074,24 @@ function qmRemoteSessionStartFromCard(btn) {
   qmRemoteSessionStart(serverName);
 }
 
-function qmRemoteSessionStopFromCard(btn) {
+// 본인 세션 종료 — 비밀번호 없이 바로 종료
+function qmRemoteSessionStopOwn(btn) {
   const card = btn && btn.closest ? btn.closest(".qm-card") : null;
   const serverName = card ? card.getAttribute("data-srv") || "" : "";
   if (!serverName) return;
   qmRemoteSessionStop(serverName, "");
+}
+
+// 타인 세션 강제 종료 — 비밀번호 입력 후 종료
+function qmRemoteSessionStopFromCard(btn) {
+  const card = btn && btn.closest ? btn.closest(".qm-card") : null;
+  const serverName = card ? card.getAttribute("data-srv") || "" : "";
+  if (!serverName) return;
+  showPasswordPromptModal({
+    title: "강제 종료 — " + serverName,
+    label: "종료 비밀번호를 입력하세요  (기본값: 1524)",
+    onConfirm: (pw) => qmRemoteSessionStop(serverName, pw),
+  });
 }
 
 async function qmRemoteSessionStart(serverName) {
@@ -2072,8 +2118,7 @@ async function qmRemoteSessionStart(serverName) {
 
 async function qmRemoteSessionStop(serverName, adminPassword) {
   try {
-    const body = { server_name: serverName };
-    if (adminPassword) body.admin_password = adminPassword;
+    const body = { server_name: serverName, admin_password: adminPassword || "" };
     const res = await qmRemoteFetch("/api/qm-remote/session/stop", {
       method: "POST",
       body: JSON.stringify(body),
@@ -2084,15 +2129,8 @@ async function qmRemoteSessionStop(serverName, adminPassword) {
       qmRemoteRefresh();
       return;
     }
-    if (res.status === 403 && d.need_admin) {
-      showPasswordPromptModal({
-        title: "관리자 비밀번호",
-        label: d.error || "강제 종료를 위해 설정에 저장한 비밀번호를 입력하세요",
-        onConfirm: (pw) => qmRemoteSessionStop(serverName, pw),
-      });
-      return;
-    }
-    alert(d.error || "종료하지 못했습니다");
+    // 비밀번호 오류 등 실패 시 알림만 표시 (재시도 없음)
+    showToast(d.error || "종료하지 못했습니다");
   } catch (e) {
     showToast("네트워크 오류");
   }
@@ -2106,10 +2144,15 @@ function qmRemoteRefresh() {
         const host = document.getElementById("qm-remote-cards-host");
         if (host) host.innerHTML = '<div class="empty-state">' + escHtml(d.error || "상태를 불러오지 못했습니다") + "</div>";
         const meta = document.getElementById("qm-remote-meta");
-        if (meta) meta.textContent = d.error ? String(d.error) : "";
+        if (meta) { meta.dataset.lastRefresh = ""; meta.textContent = d.error ? String(d.error) : ""; }
         if (d.error) showToast(d.error);
         return;
       }
+      // 마지막 갱신 시각 기록 (카운트다운 표시용)
+      const now = new Date();
+      const timeStr = now.getHours().toString().padStart(2,"0") + ":" + now.getMinutes().toString().padStart(2,"0") + ":" + now.getSeconds().toString().padStart(2,"0");
+      const meta = document.getElementById("qm-remote-meta");
+      if (meta) meta.dataset.lastRefresh = timeStr;
       qmRemoteRenderCards(d);
     })
     .catch(() => showToast("네트워크 오류"));
@@ -4143,7 +4186,7 @@ function stBuildReportExportPayload() {
   const chipStr = chips.length ? " · " + chips.join(", ") : "";
   const qStr = q ? " · 검색: " + q : "";
   return {
-    title: "Convert Pro 3 — 현장 현황",
+    title: "QM 통합관제 시스템 — 현장 현황",
     subtitle: new Date().toLocaleString("ko-KR") + " · 표시: " + filterScope + chipStr + qStr,
     groups,
   };
@@ -4228,7 +4271,7 @@ function exportPdf() {
   const hdr = document.createElement("div");
   hdr.className = "report-pdf-header";
   hdr.innerHTML =
-    "<h1>Convert Pro 3 — 현장 현황</h1><p>" +
+    "<h1>QM 통합관제 시스템 — 현장 현황</h1><p>" +
     escHtml(new Date().toLocaleString("ko-KR")) +
     "</p>";
   wrap.appendChild(hdr);

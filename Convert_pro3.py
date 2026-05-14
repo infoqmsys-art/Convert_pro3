@@ -1,3 +1,28 @@
+"""
+================================================================================
+컨버트 프로그램 (Convert Pro 3)
+================================================================================
+QM 계측 로거의 원본 CSV 파일을 읽어 표준 형식으로 변환·저장하는 데스크톱 앱.
+
+주요 기능
+---------
+- 원본 CSV 자동 감지 및 주기 변환 (스케줄러)
+- 센서 타입별 공학 단위 환산 (SensorProcessor)
+- 누락 구간 자동 보충 (FillIntervalProcessor)
+- 채널·파일 설정 GUI (Tkinter)
+- 모니터링 웹 대시보드 연동 (monitoring/server.py)
+- 계측관리 통합시스템 연동 (measurement_portal/)
+
+프로젝트 구성
+-------------
+  Convert_pro3.py          ← 이 파일 (진입점·앱 초기화)
+  core/                    핵심 로직 (변환·스케줄링·설정)
+  ui/                      Tkinter 화면
+  utils/                   공통 유틸
+  monitoring/server.py     QM 자동화 관제시스템 (Flask 웹)
+  measurement_portal/      계측관리 통합시스템 (Flask 웹)
+================================================================================
+"""
 import os
 import sys
 import time
@@ -226,8 +251,8 @@ class ConvertPro3App:
 
     def do_web_patch(self, repo_path: str, status_cb=None) -> dict:
         """
-        git pull + monitoring/ 복사.
-        서버 PC에서 [웹 패치] 버튼 클릭 시 호출.
+        git pull + 필요 시 monitoring/ 실행 폴더 동기화.
+        git 이 최신이라도 실행 폴더 monitoring 과 저장소 내용이 다르면 복사합니다.
 
         repo_path : Convert_pro3 소스 저장소 루트 경로 (git clone 위치)
         status_cb : 진행 상황 문자열 콜백 (선택)
@@ -242,6 +267,38 @@ class ConvertPro3App:
             if status_cb:
                 status_cb(msg)
 
+        def _files_differ(sa: Path, sb: Path) -> bool:
+            if not sa.exists() or not sa.is_file():
+                return False
+            if not sb.exists():
+                return True
+            try:
+                return sa.read_bytes() != sb.read_bytes()
+            except Exception:
+                return True
+
+        def _monitoring_differs(src_root: Path, dst_root: Path):
+            srv = tpl = False
+            need = False
+            for py_name in ('server.py', 'data_cache.py', '__init__.py'):
+                a = src_root / py_name
+                if not a.exists():
+                    continue
+                if _files_differ(a, dst_root / py_name):
+                    need = True
+                    if py_name in ('server.py', 'data_cache.py'):
+                        srv = True
+            tsrc = src_root / 'templates'
+            if tsrc.exists():
+                for fpath in tsrc.rglob('*'):
+                    if not fpath.is_file():
+                        continue
+                    rel = fpath.relative_to(tsrc)
+                    if _files_differ(fpath, dst_root / 'templates' / rel):
+                        need = True
+                        tpl = True
+            return need, srv, tpl
+
         repo = Path(repo_path)
         src_monitoring = repo / 'monitoring'
         dst_monitoring = Path(self.base_dir) / 'monitoring'
@@ -252,49 +309,63 @@ class ConvertPro3App:
                 "올바른 Convert_pro3 저장소 폴더를 선택하세요."
             )
 
-        # ① git pull
-        _status('git pull 실행 중...')
-        result = subprocess.run(
-            ['git', 'pull', 'origin'],
+        # ① git pull — 브랜치 명시 (upstream 미설정된 클론에서도 동작)
+        br_cmd = subprocess.run(
+            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
             cwd=str(repo),
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=10,
+            encoding='utf-8',
+            errors='replace',
+        )
+        branch = (br_cmd.stdout or '').strip()
+        if not branch or branch == 'HEAD':
+            branch = 'main'
+
+        _status(f'git pull 실행 중... (origin {branch})')
+        result = subprocess.run(
+            ['git', 'pull', 'origin', branch],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=120,
             encoding='utf-8',
             errors='replace'
         )
+        if result.returncode != 0 and branch == 'main':
+            _status('origin main 실패 — origin master 재시도...')
+            result = subprocess.run(
+                ['git', 'pull', 'origin', 'master'],
+                cwd=str(repo),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                encoding='utf-8',
+                errors='replace'
+            )
         if result.returncode != 0:
             raise RuntimeError(
                 f"git pull 실패:\n{result.stderr.strip() or result.stdout.strip()}"
             )
 
         pull_output = result.stdout.strip()
-        _status(f'git pull 완료: {pull_output[:60]}')
+        _status(f'git pull 완료: {pull_output[:120]}')
 
-        if 'Already up to date' in pull_output or 'already up-to-date' in pull_output.lower():
-            _status('이미 최신 상태입니다.')
+        need_sync, server_changed, template_changed = _monitoring_differs(
+            src_monitoring, dst_monitoring
+        )
+
+        if not need_sync:
+            lo = pull_output.lower()
+            if 'already up to date' in lo or 'already up-to-date' in lo:
+                _status('저장소 최신 · 실행 폴더 monitoring 과 동일')
+            else:
+                _status('이번 pull 에 monitoring 변경 없음 · 실행 폴더 동일')
             return {'no_change': True, 'server_changed': False, 'template_changed': False}
 
-        # ② 변경된 파일 목록 확인 (git diff --name-only ORIG_HEAD HEAD)
-        changed = subprocess.run(
-            ['git', 'diff', '--name-only', 'ORIG_HEAD', 'HEAD'],
-            cwd=str(repo),
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            errors='replace'
-        ).stdout.strip().splitlines()
-
-        monitoring_changed = [f for f in changed if f.startswith('monitoring/')]
-        server_changed = any('server.py' in f or 'data_cache.py' in f for f in monitoring_changed)
-        template_changed = any('/templates/' in f for f in monitoring_changed)
-
-        if not monitoring_changed:
-            _status('monitoring/ 변경 없음 — 복사 생략')
-            return {'no_change': True, 'server_changed': False, 'template_changed': False}
-
-        # ③ monitoring/ 복사
-        _status('monitoring/ 파일 복사 중...')
+        # ② monitoring/ 복사
+        _status('monitoring/ 실행 폴더로 복사 중...')
         dst_monitoring.mkdir(parents=True, exist_ok=True)
         (dst_monitoring / 'templates').mkdir(parents=True, exist_ok=True)
 

@@ -1,30 +1,56 @@
 """
-계측관리 통합시스템 — 독립 웹 데모 (Convert Pro 본 프로그램과 import·경로 공유 없음)
+================================================================================
+계측관리 통합시스템
+================================================================================
+현장·업체·로거·센서를 통합 관리하는 독립 웹 포털.
+Convert Pro 본 프로그램과 import·경로를 공유하지 않으며 단독으로 실행된다.
 
-신규 UI 진입: 로그인 후 /org-list(업체 리스트) → 업체 선택 후 /site-list?org_id=…(현장 리스트).
-구 대시보드 URL은 /org-list 로 돌려보냄.
-로거 경로·센서·그래프·계정 등 일부 화면은 /legacy/… 경로를 유지(북마크·API 호환).
-예전 /sites·/sites/<id>/loggers 등은 신규 화면으로 리다이렉트.
+주요 기능
+---------
+- 업체(Organization) / 현장(Site) / 로거 계층 관리
+- 센서 설정·채널 매핑 및 계측 데이터 조회·그래프
+- 계정·권한 관리 (관리자 / 일반 사용자)
+- 수집 스크립트(scripts/) 를 통한 원본 데이터 수집·적재
 
-실행:
-  - Windows: run_portal.bat (프로젝트 .venv 자동 사용)
-  - 수동: cd measurement_portal/SurveyMgmtPortal && pip install -r requirements.txt && python app.py
-  - 버전: 웹 `portal_version.py` · 수집 `scripts/collector_version.py` — 올리기 `python scripts/bump_versions.py auto`
+화면 구조
+---------
+  /org-list                업체 목록 (로그인 후 첫 화면)
+  /site-list?org_id=…      현장 목록
+  /legacy/…                로거 경로·센서·그래프·계정 (북마크·API 호환 유지)
 
-브라우저(로컬 기본): http://127.0.0.1:8765/
-같은 네트워크 다른 PC: run_portal_lan.bat 실행 후 서버의 LAN IP 로 접속 (콘솔 안내 참고).
+실행 방법
+---------
+  Windows  : run_portal.bat  (프로젝트 .venv 자동 사용)
+  수동     : cd measurement_portal/SurveyMgmtPortal
+             pip install -r requirements.txt && python app.py
+  버전 관리: python scripts/bump_versions.py auto
 
-환경변수 (호스팅·운영 시):
-  SURVEY_PORTAL_HOST   바인드 주소 (기본 127.0.0.1, 서버에선 보통 0.0.0.0)
-  SURVEY_PORTAL_PORT   포트 (기본 8765)
-  SURVEY_PORTAL_THREADS waitress 스레드 수 (기본 4)
-  SURVEY_PORTAL_SECRET 세션용 비밀키 (미설정 시 data/.portal_secret_key 에 자동 저장·재사용)
-  SURVEY_PORTAL_DB     SQLite 경로
-  SURVEY_PORTAL_DEV=1          로컬 개발: Flask + 파일 변경 시 재시작(Waitress 사용 안 함)
-  SURVEY_PORTAL_DEPLOY_POLL_SEC  UI에서 배포/코드 변경 알림 — 숫자(초)=자동폴링, 0=수동 버튼만
+접속 주소
+---------
+  로컬      : http://127.0.0.1:8765/
+  LAN 공유  : run_portal_lan.bat 실행 후 콘솔에 표시된 LAN IP 로 접속
+
+환경변수 (호스팅·운영 시)
+--------------------------
+  SURVEY_PORTAL_HOST        바인드 주소 (기본 127.0.0.1, 서버 운영 시 0.0.0.0)
+  SURVEY_PORTAL_PORT        포트 (기본 8765)
+  SURVEY_PORTAL_THREADS     waitress 스레드 수 (기본 4)
+  SURVEY_PORTAL_SECRET      세션 비밀키 (미설정 시 data/.portal_secret_key 자동 생성·재사용)
+  SURVEY_PORTAL_DB          SQLite 경로
+  SURVEY_PORTAL_DEV=1       로컬 개발 모드 (Flask dev server, 파일 변경 시 자동 재시작)
+  SURVEY_PORTAL_DEPLOY_POLL_SEC  배포 알림 폴링 간격(초), 0=수동 버튼만
   프로덕션 WSGI: wsgi.py 의 application (gunicorn 등)
 
-로그인: DB portal_user (데모 admin/1524, guest/guest123 — 시드·부트스트랩 참고)
+기본 계정 (데모·시드)
+---------------------
+  admin / 1524   |   guest / guest123
+
+프로젝트 내 위치
+----------------
+  measurement_portal/SurveyMgmtPortal/app.py  ← 이 파일 (계측관리 통합시스템 진입점)
+  Convert_pro3.py                              컨버트 프로그램
+  monitoring/server.py                         QM 자동화 관제시스템
+================================================================================
 """
 from __future__ import annotations
 

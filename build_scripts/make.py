@@ -282,7 +282,7 @@ def build():
     print_success(f"버전: {version_full}")
     print_info(f"파일 위치: {DIST_DIR}")
     print_info(f"  - ConvertPro3_{version_short}.exe (메인 프로그램)")
-    print_info(f"  - tools/update.exe (업데이터)")
+    print_info(f"  - tools/updater.exe (업데이터)")
     print()
     print_warning("다음 단계:")
     print_info("1. dist 폴더에서 exe 파일을 테스트하세요")
@@ -318,7 +318,7 @@ def deploy():
     print_info("패키지 생성 중...")
     with zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED) as zf:
         zf.write(exe_file, exe_file.name)
-        
+
         # tools 폴더가 있으면 포함
         if tools_dir.exists():
             for tool_file in tools_dir.glob('*'):
