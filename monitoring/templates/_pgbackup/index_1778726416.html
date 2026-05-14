@@ -212,10 +212,39 @@
         <!-- ═══ Navigation ═══ -->
         <nav class="app-nav" id="main-app-nav">
             <button class="nav-item" onclick="switchPage('dashboard')" data-page="dashboard">메인화면</button>
-            <button class="nav-item" onclick="switchPage('manager')" data-page="manager">담당자 설정</button>
-            <button class="nav-item active" onclick="switchPage('report')" data-page="report">전체 현황리포트</button>
-            <button class="nav-item" onclick="switchPage('qmremote')" data-page="qmremote">큐엠 원격모니터링</button>
-            <button class="nav-item" onclick="switchPage('shortcuts')" data-page="shortcuts">프로그램 하이퍼링크</button>
+            <button class="nav-item" onclick="switchPage('manager')" data-page="manager">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                관리자 설정
+            </button>
+            <button class="nav-item" onclick="switchPage('report')" data-page="report">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+                현황 리포트
+            </button>
+            <button class="nav-item" onclick="switchPage('qmremote')" data-page="qmremote">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="3" width="20" height="14" rx="2"/>
+                    <line x1="8" y1="21" x2="16" y2="21"/>
+                    <line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+                QM 원격
+            </button>
+            <button class="nav-item" onclick="switchPage('shortcuts')" data-page="shortcuts">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+                프로그램 바로가기
+            </button>
         </nav>
         <!-- ═══════════════════════════════════
      Page 1: Dashboard
@@ -358,7 +387,7 @@
             <div class="report-wrap">
                 <div class="report-inner">
                     <div class="report-toolbar">
-                        <input class="report-search" id="st-search" placeholder="검색…" oninput="stFilter()">
+                        <input class="report-search" id="st-search" placeholder="현장명, 업체명, 메모 검색..." oninput="stFilter()">
                         <div id="st-company-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></div>
                         <button class="chip" id="st-chip-issue" onclick="stToggleChip('issue')">이슈 현장</button>
                         <button class="chip" id="st-chip-memo" onclick="stToggleChip('memo')">메모 있음</button>
