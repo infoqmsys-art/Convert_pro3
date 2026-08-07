@@ -2082,155 +2082,40 @@ class MainUI:
             messagebox.showerror("추가 실패", f"현장 추가 중 문제가 발생했습니다.\n\n오류 내용: {e}\n\n다시 시도해주세요.")
     
     def _check_update(self):
-        """업데이트 선택 → EXE 업데이트 또는 웹 패치"""
+        """개발 PC push 후: 실행 폴더에서 git pull → 재시작 안내."""
+        import threading
+
         dlg = tk.Toplevel(self.root)
         dlg.title("업데이트")
-        dlg.geometry("360x180")
+        dlg.geometry("400x160")
         dlg.resizable(False, False)
         dlg.transient(self.root)
         dlg.grab_set()
         self._center_popup_on_parent(dlg)
 
-        tk.Label(
-            dlg,
-            text="어떤 업데이트를 진행할까요?",
-            font=("맑은 고딕", 11, "bold"),
-            fg="#2C3E50"
-        ).pack(pady=(20, 6))
-
-        tk.Label(
-            dlg,
-            text="프로그램 업데이트: GitHub에서 새 EXE 버전 확인\n"
-                 "웹 패치: 개발 PC push → 서버에서 git pull 후 monitoring 반영",
-            font=("맑은 고딕", 9),
-            fg="#666",
-            justify="center"
-        ).pack(pady=(0, 16))
-
-        btn_frame = tk.Frame(dlg)
-        btn_frame.pack()
-
-        def on_exe():
-            dlg.destroy()
-            self._start_exe_update_check()
-
-        def on_web():
-            dlg.destroy()
-            self._start_web_patch()
-
-        tk.Button(
-            btn_frame,
-            text="프로그램 업데이트",
-            command=on_exe,
-            font=("맑은 고딕", 10, "bold"),
-            bg="#9B59B6", fg="white",
-            activebackground="#8E44AD", activeforeground="white",
-            relief="flat", padx=14, pady=8, cursor="hand2"
-        ).pack(side="left", padx=6)
-
-        tk.Button(
-            btn_frame,
-            text="웹 패치",
-            command=on_web,
-            font=("맑은 고딕", 10, "bold"),
-            bg="#2980B9", fg="white",
-            activebackground="#2471A3", activeforeground="white",
-            relief="flat", padx=14, pady=8, cursor="hand2"
-        ).pack(side="left", padx=6)
-
-        tk.Button(
-            btn_frame,
-            text="취소",
-            command=dlg.destroy,
-            font=("맑은 고딕", 10),
-            bg="#ECF0F1", fg="#555",
-            relief="flat", padx=14, pady=8, cursor="hand2"
-        ).pack(side="left", padx=6)
-
-    def _start_exe_update_check(self):
-        """기존 EXE 업데이트 확인 흐름"""
-        import threading
-
-        progress_dialog = tk.Toplevel(self.root)
-        progress_dialog.title("업데이트 확인")
-        progress_dialog.geometry("300x100")
-        progress_dialog.resizable(False, False)
-        progress_dialog.transient(self.root)
-        progress_dialog.grab_set()
-        self._center_popup_on_parent(progress_dialog)
-
-        tk.Label(
-            progress_dialog,
-            text="업데이트를 확인하는 중...",
-            font=("맑은 고딕", 10)
-        ).pack(pady=20)
-
-        from tkinter import ttk
-        progress = ttk.Progressbar(progress_dialog, mode='indeterminate', length=200)
-        progress.pack(pady=10)
-        progress.start(10)
-
-        def check_thread():
-            try:
-                from utils.update_manager import UpdateManager
-                update_manager = UpdateManager(self.logger)
-                update_info = update_manager.check_for_updates()
-                self.root.after(0, lambda: self._handle_update_result(
-                    progress_dialog, update_manager, update_info
-                ))
-            except Exception as exc:
-                self.logger.log(f"업데이트 확인 실패: {exc}", level="ERROR")
-                error_msg = str(exc)
-                self.root.after(0, lambda msg=error_msg: self._show_update_error(progress_dialog, msg))
-
-        threading.Thread(target=check_thread, daemon=True).start()
-
-    def _start_web_patch(self):
-        """웹 패치 — git pull 후 monitoring/ 을 실행 폴더로 복사."""
-        import threading
-
-        repo_path = self.app.config.get_web_patch_repo_path()
-        if not repo_path:
-            repo_path = filedialog.askdirectory(
-                title="git clone 한 Convert_pro3 폴더 선택 (그 안의 monitoring/ 이 복사됩니다)",
-                parent=self.root,
-            )
-            if not repo_path:
-                return
-            self.app.config.set_web_patch_repo_path(repo_path)
-
-        dlg = tk.Toplevel(self.root)
-        dlg.title("웹 패치")
-        dlg.geometry("400x170")
-        dlg.resizable(False, False)
-        dlg.transient(self.root)
-        dlg.grab_set()
-        self._center_popup_on_parent(dlg)
-
-        header = tk.Frame(dlg, bg="#2980B9", height=50)
+        header = tk.Frame(dlg, bg="#9B59B6", height=50)
         header.pack(fill="x")
         header.pack_propagate(False)
         tk.Label(
             header,
-            text="웹 패치 (git pull → 복사)",
+            text="소스 업데이트 (git pull)",
             font=("맑은 고딕", 11, "bold"),
-            bg="#2980B9",
+            bg="#9B59B6",
             fg="white",
         ).pack(pady=12)
 
-        status_var = tk.StringVar(value="저장소에서 git pull 중...")
+        status_var = tk.StringVar(value="원격에서 최신 코드 받는 중...")
         tk.Label(dlg, textvariable=status_var, font=("맑은 고딕", 9), fg="#444").pack(pady=10)
 
         from tkinter import ttk
-        prog = ttk.Progressbar(dlg, mode='indeterminate', length=340)
+        prog = ttk.Progressbar(dlg, mode="indeterminate", length=340)
         prog.pack(pady=4)
         prog.start(10)
 
-        def patch_thread():
+        def run():
             try:
-                result = self.app.do_web_patch(
-                    repo_path,
-                    status_cb=lambda msg: dlg.after(0, lambda m=msg: status_var.set(m)),
+                result = self.app.do_source_update(
+                    status_cb=lambda msg: dlg.after(0, lambda m=msg: status_var.set(m))
                 )
                 dlg.after(0, lambda: _finish(result))
             except Exception as e:
@@ -2239,219 +2124,32 @@ class MainUI:
         def _finish(result):
             prog.stop()
             dlg.destroy()
-            if result.get('server_changed'):
-                self.show_web_restart_banner()
+            if result.get("pulled"):
                 messagebox.showinfo(
-                    "웹 패치 완료",
-                    "패치 완료!\n\n"
-                    "server.py 가 변경되었습니다.\n"
-                    "[웹 재시작] 버튼을 눌러 반영하세요.\n\n"
-                    "templates/ 변경은 브라우저 새로고침으로 즉시 반영됩니다.",
-                    parent=self.root,
-                )
-            elif result.get('template_changed'):
-                messagebox.showinfo(
-                    "웹 패치 완료",
-                    "패치 완료!\n\n"
-                    "templates/ 가 변경되었습니다.\n"
-                    "브라우저를 새로고침하면 즉시 반영됩니다.",
-                    parent=self.root,
-                )
-            elif result.get('no_change'):
-                pulled = result.get('pulled')
-                extra = (
-                    "원격에서 새 커밋을 받았지만 monitoring 은 실행 폴더와 동일합니다."
-                    if pulled
-                    else "저장소·실행 폴더 monitoring 모두 최신(동일)입니다."
-                )
-                messagebox.showinfo(
-                    "웹 패치",
-                    f"{extra}\n\n"
-                    "개발 PC에서 push 후 다시 패치하세요.\n"
-                    "화면이 옛것이면 Ctrl+F5 강력 새로고침을 해 보세요.",
+                    "업데이트 완료",
+                    "새 코드를 받았습니다.\n\n"
+                    "프로그램을 종료한 뒤 다시 실행해 주세요.\n"
+                    "(재시작해야 변경이 적용됩니다.)\n\n"
+                    f"{result.get('message', '')}",
                     parent=self.root,
                 )
             else:
-                messagebox.showinfo("웹 패치 완료", "패치가 완료되었습니다.", parent=self.root)
+                messagebox.showinfo(
+                    "업데이트",
+                    "이미 최신입니다.\n\n변경된 코드가 없습니다.",
+                    parent=self.root,
+                )
 
         def _error(err):
             prog.stop()
             dlg.destroy()
             messagebox.showerror(
-                "웹 패치 실패",
-                f"오류가 발생했습니다.\n\n{err}\n\n"
-                "· 서버 PC에 Git 설치 + PATH\n"
-                "· web 패치 경로 = git clone 한 Convert_pro3 루트\n"
-                "· 원격 pull 권한(인증) 확인",
+                "업데이트 실패",
+                f"오류가 발생했습니다.\n\n{err}",
                 parent=self.root,
             )
 
-        threading.Thread(target=patch_thread, daemon=True).start()
-
-    def _handle_update_result(self, progress_dialog, update_manager, update_info):
-        """업데이트 확인 결과 처리 - 완전 자동 모드"""
-        progress_dialog.destroy()
-        
-        if update_info.get('error'):
-            messagebox.showwarning(
-                "업데이트 확인 실패",
-                f"업데이트를 확인할 수 없습니다.\n\n오류: {update_info.get('error')}",
-                parent=self.root
-            )
-            return
-        
-        if not update_info.get('available'):
-            messagebox.showinfo(
-                "업데이트 없음",
-                f"현재 최신 버전입니다.\n\n버전: {update_manager.current_version}",
-                parent=self.root
-            )
-            return
-        
-        # 새 버전 발견 시 바로 자동 업데이트 시작
-        new_version = update_info['version']
-        
-        # 간단한 확인 메시지만 표시
-        response = messagebox.askyesno(
-            "업데이트 발견",
-            f"새 버전이 있습니다!\n\n"
-            f"현재: {update_manager.current_version}\n"
-            f"최신: {new_version}\n\n"
-            f"지금 자동으로 업데이트하시겠습니까?\n"
-            f"(프로그램이 자동으로 재시작됩니다)",
-            parent=self.root
-        )
-        
-        if not response:
-            return
-        
-        # 자동 다운로드 시작
-        self._start_auto_update(update_manager, update_info)
-    
-    def _start_auto_update(self, update_manager, update_info):
-        """자동 업데이트 시작"""
-        import threading
-        import tempfile
-        from pathlib import Path
-        
-        # 다운로드 진행 창
-        download_dialog = tk.Toplevel(self.root)
-        download_dialog.title("자동 업데이트")
-        download_dialog.geometry("400x180")
-        download_dialog.resizable(False, False)
-        download_dialog.transient(self.root)
-        download_dialog.grab_set()
-        
-        # 중앙 배치
-        self._center_popup_on_parent(download_dialog)
-        
-        # 헤더
-        header_frame = tk.Frame(download_dialog, bg="#3498DB", height=60)
-        header_frame.pack(fill="x")
-        header_frame.pack_propagate(False)
-        
-        tk.Label(
-            header_frame,
-            text="자동 업데이트 중...",
-            font=("맑은 고딕", 12, "bold"),
-            bg="#3498DB",
-            fg="white"
-        ).pack(pady=18)
-        
-        # 내용
-        content_frame = tk.Frame(download_dialog, bg="white")
-        content_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        status_label = tk.Label(
-            content_frame,
-            text="업데이트 파일을 다운로드하는 중...",
-            font=("맑은 고딕", 10),
-            bg="white"
-        )
-        status_label.pack(pady=(0, 10))
-        
-        from tkinter import ttk
-        progress = ttk.Progressbar(
-            content_frame,
-            mode='determinate',
-            length=340
-        )
-        progress.pack(pady=5)
-        
-        percent_label = tk.Label(
-            content_frame,
-            text="0%",
-            font=("맑은 고딕", 9),
-            fg="gray",
-            bg="white"
-        )
-        percent_label.pack(pady=5)
-        
-        def update_progress(percent):
-            """진행률 업데이트"""
-            download_dialog.after(0, lambda: progress.config(value=percent))
-            download_dialog.after(0, lambda: percent_label.config(text=f"{percent}%"))
-        
-        def download_thread():
-            """다운로드 스레드"""
-            try:
-                # 임시 파일 경로
-                is_zip = update_info.get('is_zip', False)
-                file_extension = '.zip' if is_zip else '.exe'
-                temp_file = Path(tempfile.gettempdir()) / f"ConvertPro3_update{file_extension}"
-                
-                # 다운로드
-                success = update_manager.download_update(
-                    update_info['download_url'],
-                    temp_file,
-                    progress_callback=update_progress
-                )
-                
-                if not success:
-                    download_dialog.after(0, lambda: self._show_download_error(download_dialog))
-                    return
-                
-                # 다운로드 완료
-                download_dialog.after(0, lambda: status_label.config(text="업데이트 적용 중..."))
-                download_dialog.after(0, lambda: percent_label.config(text="완료"))
-                
-                # 업데이터 시작
-                if update_manager.start_updater(temp_file, is_zip=is_zip):
-                    # 성공 - 프로그램 종료
-                    download_dialog.after(0, lambda: self._complete_update(download_dialog))
-                else:
-                    download_dialog.after(0, lambda: self._show_download_error(download_dialog))
-                    
-            except Exception as e:
-                self.logger.log(f"자동 업데이트 실패: {e}", level="ERROR")
-                error_msg = str(e)
-                download_dialog.after(0, lambda msg=error_msg: self._show_download_error(download_dialog, msg))
-        
-        # 다운로드 시작
-        thread = threading.Thread(target=download_thread, daemon=True)
-        thread.start()
-    
-    def _complete_update(self, dialog):
-        """업데이트 완료 - 창 없이 즉시 종료, updater가 재시작"""
-        dialog.destroy()
-        self.root.quit()  # 즉시 종료 (updater가 교체 후 새 버전으로 재시작)
-    
-    def _show_download_error(self, dialog, error_msg=""):
-        """다운로드 오류 표시"""
-        dialog.destroy()
-        msg = "업데이트 다운로드에 실패했습니다."
-        if error_msg:
-            msg += f"\n\n오류: {error_msg}"
-        messagebox.showerror("업데이트 실패", msg, parent=self.root)
-    
-    def _show_update_error(self, progress_dialog, error_msg):
-        """업데이트 확인 오류 표시"""
-        progress_dialog.destroy()
-        messagebox.showerror(
-            "오류",
-            f"업데이트 확인 중 오류가 발생했습니다.\n\n{error_msg}",
-            parent=self.root
-        )
+        threading.Thread(target=run, daemon=True).start()
 
     # ======================================================
     # 폴더 추가 (Site 레벨 포함)
