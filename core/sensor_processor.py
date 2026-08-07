@@ -5,7 +5,7 @@ SensorProcessor (Convert Pro 3) - Column-based Engine
 센서 모드 분류
 =====================================================================
 ■ 원본참조 (REF) — 실측값을 읽어서 변환
-  PASS        원본 그대로
+  PASS        원본 그대로 (설정값 post_offset 가 있으면 변환 결과 맨 마지막에 가산)
   OFFSET      원본 + base
   EL          원본 + base (경사/변위 아날로그)
   EL_LOW      원본 + base (저노이즈)    ← 가라 노이즈 포함
@@ -21,7 +21,9 @@ SensorProcessor (Convert Pro 3) - Column-based Engine
   V / BASE_RAND / NM / DO_VM   base ± 랜덤 (DO_VM: 용존산소형, scale 기본 ~0.0045)
   DO_CR             BASE ± 균등떨림(scale) + 행마다 ±cr_step 누적(기본 0.0001)
   TS                   base ± 확률분포
-  CHANG_V   CSV 8번 열(0-based 인덱스 8) × scale
+  CHANG_V    CSV 9번 열(0-based 인덱스 8) × scale
+  CHANG_V2   CSV 8번 열(0-based 인덱스 7) — 0.01 이상만 × scale; 원본 0은 ~10%만 0.001/0.002
+  DY_V       전압형 가라 — 0.001 단위 이산값, base 중심·완만 하강 drift
   CHANG_SM   시간대별 분포
   CHANG_SM2  0-based 8번 행·채널 열 셀 × base(배율) → 열 전체 동일값
   EL_TAEAM / EL_STATION / EL_TUNNEL  base + 노이즈
@@ -37,6 +39,11 @@ SensorProcessor (Convert Pro 3) - Column-based Engine
 
 ✅ 확장 방식:
 - 새 모드 추가 시: def generate_HJ(self, df, cfg): ... 만 추가하면 자동 적용됨
+
+■ 채널별 post_offset (JSON 키: post_offset)
+  - 채널 설정에서 숫자로 지정. 비어 있으면 0.
+  - 해당 모드(SET 등)까지 계산된 열 값에 마지막으로 더함. PASS 포함 전 모드 동일.
+  - 과거 설정의 「offset」(모드 문자열 PASS/OFFSET 등)과 이름만 비슷할 뿐 별개.
 """
 
 # NOTE:
@@ -66,7 +73,7 @@ MODE_META = {
     "SET":        {"use_base": True,  "use_scale": True,  "ref": True,  "desc": "base 기준 변위를 scale 배율로 보정"},
     "ANSAN_WM":   {"use_base": True,  "use_scale": True,  "ref": True,  "desc": "지하수위계: (원값×4) - 파이프길이 + 보정"},
     "ANSAN_WM_GA":{"use_base": True,  "use_scale": True,  "ref": False, "desc": "안산 WM 가라: 전값+랜덤+밴드(코드 고정, scale만 선택)"},
-    "COPY":       {"use_base": False, "use_scale": False, "ref": True,  "desc": "다른 컬럼 복사"},
+    "COPY":       {"use_base": True,  "use_scale": False, "ref": True,  "desc": "다른 컬럼 복사 (base=참조 열 인덱스)"},
     "NZADD":      {"use_base": True,  "use_scale": False, "ref": True,  "desc": "참조열 인덱스 base; 0→0 출력, 비0면 +uniform(rand_min,rand_max)"},
     # ── 원본미참조 ────────────────────────────────────────────────
     "V":          {"use_base": True,  "use_scale": True,  "ref": False, "desc": "전압형 가라 (base ± 랜덤)"},
@@ -77,7 +84,9 @@ MODE_META = {
     "TS":         {"use_base": True,  "use_scale": False, "ref": False, "desc": "TS 가라 (base ± 확률분포)"},
     "VIBROMETER": {"use_base": False, "use_scale": True,  "ref": True,  "desc": "진동계: 스케일 1~9 = X/Y/Z 각 최대·최소·평균 순, base 불필요"},
     "SM_TAEAM":   {"use_base": True,  "use_scale": False, "ref": True,  "desc": "TAEAM 진동: 원본 유지, base 이상은 (base-5)~base 랜덤 보정"},
-    "CHANG_V":    {"use_base": False, "use_scale": True,  "ref": True,  "desc": "CHANG_V: 8번 열(0-based=8) 값 × scale"},
+    "CHANG_V":    {"use_base": False, "use_scale": True,  "ref": True,  "desc": "CHANG_V: 9번 열(0-based=8) 값 × scale"},
+    "CHANG_V2":   {"use_base": False, "use_scale": True,  "ref": True,  "desc": "CHANG_V2: 8번 열(0-based=7) — 0.01 이상만 × scale; 원본 0은 ~90% 유지·~10%만 0.001/0.002"},
+    "DY_V":       {"use_base": True,  "use_scale": False, "ref": False, "desc": "DY_V: 0.019~0.022대 전압형 가라(0.001 단위 이산)"},
     "CHANG_SM":   {"use_base": True,  "use_scale": True,  "ref": False, "desc": "소음계 가라"},
     "CHANG_SM2":  {"use_base": True,  "use_scale": False, "ref": True,  "desc": "CHANG_SM2: 8번 행(인덱스8)·채널열 × base"},
     "EL_TAEAM":   {"use_base": True,  "use_scale": True,  "ref": False, "desc": "EL_TAEAM 가라 (base + 정규분포)"},
@@ -99,8 +108,20 @@ NON_REF_MODES = frozenset(k for k, v in MODE_META.items() if not v["ref"])
 # 대소문자 무관 모드 조회용 (upper → 원본 키)
 _MODE_UPPER_MAP = {k.upper(): k for k in MODE_META}
 
-# CHANG_V 입력 열: 채널설명과 동일 0=A → "8번 열" = 0-based 인덱스 8
+# CHANG_V 입력 열: 0=A → 9번째 열 = 0-based 인덱스 8
 CHANG_V_SOURCE_COL = 8
+# CHANG_V2 입력 열: 0=A → 8번째 열 = 0-based 인덱스 7
+CHANG_V2_SOURCE_COL = 7
+CHANG_V2_SCALE_THRESHOLD = 0.01
+# 원본이 정확히 0일 때: ~90% 유지, ~10%만 0.001/0.002
+CHANG_V2_ZERO_VALUES = np.array([0.0, 0.001, 0.002], dtype=float)
+CHANG_V2_ZERO_WEIGHTS = np.array([0.90, 0.05, 0.05], dtype=float)
+# DY_V: base(기본 0.020) 기준 천분율 오프셋 가중치 — 실측 샘플 분포 근사
+DY_V_CENTER_DEFAULT = 0.020
+DY_V_DRIFT_PER_ROW = -0.000003
+_DY_V_OFFSETS_THOU = np.array([-8, -4, -2, -1, 0, 1, 2, 3, 4], dtype=int)
+_DY_V_OFFSET_WEIGHTS = np.array([1, 4, 18, 38, 32, 40, 22, 5, 3], dtype=float)
+_DY_V_OFFSET_WEIGHTS /= _DY_V_OFFSET_WEIGHTS.sum()
 # CHANG_SM2: 0-based 8번 행 = 인덱스 8(9번째 행)
 CHANG_SM2_SOURCE_ROW = 8
 
@@ -231,6 +252,26 @@ class SensorProcessor:
                         level="ERROR",
                     )
 
+        # ── 채널별 최종 가산(post_offset): 모드·PASS 공통으로 파이프라인 맨 마지막 ──
+        for _ch, cfg in channels.items():
+            po_f = cfg.get("post_offset")
+            try:
+                po_f = float(po_f or 0.0)
+            except (TypeError, ValueError):
+                po_f = 0.0
+            if po_f == 0.0:
+                continue
+            cidx = int(cfg["col_idx"])
+            cname = df.columns[cidx]
+            try:
+                s = pd.to_numeric(df[cname], errors="coerce").astype(float)
+                df[cname] = s + po_f
+            except Exception:
+                try:
+                    df.iloc[:, cidx] = pd.to_numeric(df.iloc[:, cidx], errors="coerce").astype(float) + po_f
+                except Exception:
+                    pass
+
         if self.logger:
             self.logger.log(
                 "센서 컬럼 처리 완료",
@@ -260,6 +301,7 @@ class SensorProcessor:
         - base: 상수(float/int) 또는 컬럼 인덱스(int) 또는 None
         - scale: float 또는 문자열("VW") 또는 None
         - base_ref: bool (옵션) -> True면 base를 컬럼 참조로 강제
+        - post_offset: 채널 변환 결과(모든 모드)·PASS 포함 최종 출력에 더할 상수(float)
         """
         result = {}
 
@@ -313,6 +355,13 @@ class SensorProcessor:
             if mode == "NZADD":
                 cfg["rand_min"] = self._parse_number_or_none(raw.get("rand_min"))
                 cfg["rand_max"] = self._parse_number_or_none(raw.get("rand_max"))
+
+            raw_po = raw.get("post_offset", None)
+            if raw_po is None or (isinstance(raw_po, str) and str(raw_po).strip() == ""):
+                cfg["post_offset"] = 0.0
+            else:
+                po = self._parse_number_or_none(raw_po)
+                cfg["post_offset"] = float(po) if po is not None else 0.0
 
             result[ch] = cfg
 
@@ -684,7 +733,7 @@ class SensorProcessor:
         ch_name = f"CH{col_idx - 16}"  # CH0~CH7 매핑
         
         if self.logger:
-            self.logger.log(f"[INFO] FM 센서 시작: {ch_name} (col_idx={col_idx})", level="INFO")
+            self.logger.log(f"FM 센서 시작: {ch_name} (col_idx={col_idx})", level="DEBUG")
         
         # 변환본 마지막 값만 사용 (무조건 변환본 전 데이터 기준)
         header_key = header_key_for_col(col_idx)
@@ -692,8 +741,8 @@ class SensorProcessor:
         initial_value = resolve_start_scalar(carry, 0.0)
         if carry is None and self.logger:
             self.logger.log(
-                f"[INFO] FM {ch_name}: 변환본 마지막 값 없음 → 0.0 사용 (변환본에 수동 입력 시 이어감)",
-                level="INFO"
+                f"FM {ch_name}: 변환본 마지막 값 없음 → 0.0 사용",
+                level="DEBUG",
             )
         
         # --------------------------------------------------
@@ -809,6 +858,35 @@ class SensorProcessor:
 
         return pd.Series(values, index=df.index)
 
+    def generate_DY_V(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
+        """
+        DY_V (전압형 가라, 0.001 단위 이산):
+        - base = 시작 중심값 (비우면 0.020)
+        - 행마다 base + 완만 drift + 천분율(0.001) 단위 가중 랜덤 오프셋
+        - 샘플: 0.019~0.022 위주, 가끔 0.016·0.024, 장기적으로 약간 하강
+        """
+        raw_base = cfg.get("base", None)
+        if raw_base is None or (isinstance(raw_base, str) and str(raw_base).strip() == ""):
+            center0 = DY_V_CENTER_DEFAULT
+        else:
+            try:
+                center0 = float(raw_base)
+            except (TypeError, ValueError):
+                center0 = DY_V_CENTER_DEFAULT
+
+        n = len(df)
+        if n == 0:
+            return pd.Series(dtype=float)
+
+        rng = np.random.default_rng()
+        t = np.arange(n, dtype=float)
+        center = center0 + DY_V_DRIFT_PER_ROW * t
+        offsets = rng.choice(_DY_V_OFFSETS_THOU, size=n, p=_DY_V_OFFSET_WEIGHTS)
+        values = center + offsets.astype(float) * 0.001
+        values = np.round(values, 3)
+        values = np.maximum(values, 0.0)
+        return pd.Series(values, index=df.index, dtype=float)
+
     def generate_CR_TAEAM(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
         """
         CR_TAEAM: CR과 같은 맥락(BASE 주변 미세 노이즈 누적), 행당 5% 확률로 ±0.0001 스텝
@@ -856,7 +934,7 @@ class SensorProcessor:
 
     def generate_CHANG_V(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
         """
-        CHANG_V: 8번 열(0-based 인덱스 8) 값 × scale
+        CHANG_V: 9번 열(0-based 인덱스 8) 값 × scale
         - scale: 배율(예: 0.2 → 0.2배, 2 → 2배). 생략 시 1.0
         - 해당 열이 없으면 NaN
         """
@@ -873,6 +951,38 @@ class SensorProcessor:
             except (TypeError, ValueError):
                 scale_v = 1.0
         return (x * scale_v).astype(float)
+
+    def generate_CHANG_V2(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
+        """
+        CHANG_V2: 8번 열(0-based 인덱스 7) 값을 참조.
+        - abs(값) >= 0.01 이면 × scale, 미만이면 원값 그대로
+        - 원본이 정확히 0이면 ~90%는 0, ~10%는 0.001 또는 0.002
+        - scale: 배율. 생략 시 1.0
+        - 해당 열이 없으면 NaN
+        """
+        n = len(df)
+        if df.shape[1] <= CHANG_V2_SOURCE_COL:
+            return pd.Series([np.nan] * n, index=df.index, dtype=float)
+        x = pd.to_numeric(df.iloc[:, CHANG_V2_SOURCE_COL], errors="coerce")
+        scale = self._resolve_scale(cfg, default=1.0)
+        if isinstance(scale, str) and str(scale).strip().upper() == "VW":
+            scale_v = 1.0
+        else:
+            try:
+                scale_v = float(scale)
+            except (TypeError, ValueError):
+                scale_v = 1.0
+        scaled = x * scale_v
+        mask = x.abs() >= CHANG_V2_SCALE_THRESHOLD
+        out = scaled.where(mask, x).astype(float)
+        zero_mask = x.eq(0) & x.notna()
+        n_zero = int(zero_mask.sum())
+        if n_zero:
+            rng = np.random.default_rng()
+            out.loc[zero_mask] = rng.choice(
+                CHANG_V2_ZERO_VALUES, size=n_zero, p=CHANG_V2_ZERO_WEIGHTS
+            )
+        return out
 
     def generate_CHANG_SM2(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
         """

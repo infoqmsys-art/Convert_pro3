@@ -108,7 +108,7 @@ class FileProcessor:
 
         self.logger.log("전체 파일 변환 종료", level="DEBUG")
 
-    def convert_file(self, company, site, folder, filename):
+    def convert_file(self, company, site, folder, filename, stop_check=None):
         """
         파일 단위 변환 (Site 레벨 포함, 재시도 로직 포함)
         
@@ -119,22 +119,26 @@ class FileProcessor:
         retry_delay = 1  # 초
         
         for attempt in range(max_retries):
+            if stop_check and stop_check():
+                return "skipped"
             try:
                 return self._convert_file_internal(company, site, folder, filename)
             
             except PermissionError as e:
+                if stop_check and stop_check():
+                    return "skipped"
                 if attempt < max_retries - 1:
                     self.logger.log(
                         f"파일 점유 중... 재시도 {attempt + 1}/{max_retries} "
                         f"({company}/{site}/{folder}/{filename})",
-                        level="WARN"
+                        level="DEBUG"
                     )
                     time.sleep(retry_delay)
                     retry_delay *= 2  # 지수 백오프
                 else:
                     self.logger.log(
-                        f"파일 변환 실패 (점유됨): {company}/{site}/{folder}/{filename}",
-                        level="ERROR"
+                        f"건너뜀(파일 점유): {company}/{site}/{folder}/{filename}",
+                        level="WARN"
                     )
                     return "error"
             
@@ -152,21 +156,114 @@ class FileProcessor:
         self.logger.log(f"파일 변환 시작: {company}/{site}/{folder}/{filename}", level="DEBUG")
 
         folder_cfg = self.config.data[company][site][folder]
+        file_cfg = self.config.data.get(company, {}).get(site, {}).get(folder, {}).get(filename, {})
+
+        if file_cfg.get("__nb_mode__"):
+            return self._convert_neo_blast_file(company, site, folder, filename, folder_cfg, file_cfg)
+
         src_path = os.path.join(folder_cfg["__absolute_path__"], filename)
 
         if not os.path.exists(src_path):
             self.logger.log(f"원본 없음 → 스킵: {company}/{site}/{folder}/{filename}", level="DEBUG")
             return "skipped"
 
-        # ⚙ 변환본 경로 규칙:
-        #   C:\data\Convertfile\{company}\{folder}\{filename}
-        #   - 폴더명(로거 식별자)으로 매핑, 현장은 트리용 논리 레벨
-        out_dir = os.path.join(self.convert_root, company, folder)
-        os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, filename)
-        
-        self.logger.log(f"📂 변환본 경로: {out_path}", level="INFO")
-        self.logger.log(f"📂 변환본 존재 여부: {os.path.exists(out_path)}", level="INFO")
+        # ⚙ 변환본 경로: {convert_root}/{company}/{folder}/{filename} (로거 폴더)
+        from utils.convert_paths import prepare_convert_out_path
+
+        out_path = prepare_convert_out_path(
+            self.convert_root, company, site, folder, filename, logger=self.logger
+        )
+
+        self.logger.log(f"📂 변환본 경로: {out_path}", level="DEBUG")
+
+        interval = file_cfg.get("__fill_interval__", 0)
+        interval_int = int(interval) if interval else 0
+        extend_to_now = bool(file_cfg.get("__fill_extend_to_now__", False))
+        align_60 = bool(file_cfg.get("__align_60__", False))
+
+        out_exists = os.path.exists(out_path)
+        try:
+            mtime_unchanged = (
+                out_exists
+                and os.path.getmtime(src_path) <= os.path.getmtime(out_path)
+            )
+        except OSError:
+            mtime_unchanged = False
+
+        # ── Fast path A: 채움 없음 + 원본 mtime 미변경 → 즉시 스킵 ──
+        # (__align_60__: 10분 변환본은 그대로 두고 _60.csv만 동기화할 수 있음)
+        if mtime_unchanged and not interval_int and not extend_to_now:
+            if align_60 and out_exists:
+                if self._sync_align60_from_main(
+                    company, site, folder, filename, out_path
+                ):
+                    return "converted"
+            self.logger.log(
+                f"원본 미변경 → 스킵: {company}/{site}/{folder}/{filename}",
+                level="DEBUG",
+            )
+            return "skipped"
+
+        # ── Fast path B: 누락보충 ON + mtime 미변경 ──
+        # 원본 전체 scan / 센서 파이프라인 생략. peek로 내용만 확인 후
+        # 필요하면 슬롯 채움만 수행.
+        if mtime_unchanged and interval_int > 0:
+            from utils.csv_last_row import peek_last_timestamp
+            from core.fill_interval_processor import _slot_ts
+
+            base_time, last_row = self._get_last_converted_data(out_path)
+            src_last = peek_last_timestamp(src_path)
+
+            # peek상 원본이 base_time 보다 새면 mtime 오판 → 전체 경로로 진행
+            need_full = (
+                src_last is not None
+                and base_time is not None
+                and pd.notna(src_last)
+                and src_last > pd.Timestamp(base_time)
+            )
+            if not need_full and last_row and base_time is not None:
+                _now = datetime.now()
+                bt_slot = _slot_ts(base_time, interval_int)
+                now_slot = _slot_ts(_now, interval_int)
+                if bt_slot is not None and now_slot is not None and bt_slot >= now_slot:
+                    self.logger.log(
+                        f"누락보충: 현재 슬롯까지 이미 있음 → 스킵 "
+                        f"({company}/{site}/{folder}/{filename})",
+                        level="DEBUG",
+                    )
+                    return "skipped"
+                try:
+                    row_vals = [
+                        last_row.get(h, 0.0 if h != "timestamp" else str(base_time))
+                        for h in STANDARD_HEADER
+                    ]
+                    last_df = pd.DataFrame([row_vals], columns=range(len(STANDARD_HEADER)))
+                    _max_fill = max(24, int(60 / interval_int * 24 * 7))
+                    tail_df = self.fill_interval.fill_from_last_to_now(
+                        last_df, base_time, interval_int,
+                        current_time_limit=_now, max_rows=_max_fill,
+                    )
+                    if not tail_df.empty:
+                        if "__filled__" in tail_df.columns:
+                            tail_df = tail_df.drop(columns=["__filled__"])
+                        tail_df.columns = range(tail_df.shape[1])
+                        self._save_append(tail_df, out_path, interval_min=0)
+                        if align_60:
+                            self._sync_align60_from_main(
+                                company, site, folder, filename, out_path, force=True
+                            )
+                        self.logger.log(
+                            f"누락보충: {company}/{site}/{folder}/{filename} "
+                            f"(+{len(tail_df)}행)",
+                            level="INFO",
+                        )
+                        return "fill"
+                    return "skipped"
+                except Exception as e:
+                    self.logger.log(
+                        f"⚠️ 고속 누락보충 실패 → 전체 경로: {e}", level="WARN"
+                    )
+            # need_full 이거나 last_row 없음 → 아래 전체 경로
 
         # 1단계: 마지막 변환 시점 확인 + 마지막 행 데이터 추출
         base_time, last_row = self._get_last_converted_data(out_path)
@@ -174,12 +271,8 @@ class FileProcessor:
         # 2단계: 변환 대상 행 수집 (base_time 이후 데이터)
         lines = self._collect_target_lines(src_path, base_time)
 
-        self.logger.log(f"⏰ 기준 변환 시간: {base_time}", level="INFO")
-        self.logger.log(f"📊 변환 대상 행 수: {len(lines)}", level="INFO")
-
-        file_cfg = self.config.data.get(company, {}).get(site, {}).get(folder, {}).get(filename, {})
-        interval = file_cfg.get("__fill_interval__", 0)
-        interval_int = int(interval) if interval else 0
+        self.logger.log(f"기준 변환 시간: {base_time}", level="DEBUG")
+        self.logger.log(f"변환 대상 행 수: {len(lines)}", level="DEBUG")
 
         # 구간: 변환본 마지막 행 시각(base_time) ~ 변환 시각(현재).
         # 원본 없음(0행) → 이 구간을 주기 채움(누락 처리). 원본 있음 → 아래에서 원본만 매핑·누락보충.
@@ -199,53 +292,63 @@ class FileProcessor:
                         if pd.notna(last_ts) and base_time is not None:
                             if last_ts < base_time:
                                 self.logger.log(
-                                    f"원본 마지막({last_ts}) < base_time({base_time}) → 원본에 새 데이터 없음. "
-                                    f"원본 파일이 최신인지 확인하세요.",
-                                    level="WARN"
+                                    f"원본 마지막({last_ts}) < base_time({base_time}) "
+                                    f"→ 새 데이터 없음",
+                                    level="DEBUG",
                                 )
                             else:
                                 self.logger.log(
-                                    f"원본 마지막({last_ts}) >= base_time인데 0행 수집됨. "
-                                    f"원본 구분자/형식 문제 가능성.",
-                                    level="WARN"
+                                    f"건너뜀(형식 의심): {company}/{site}/{folder}/{filename} "
+                                    f"— 원본 끝({last_ts}) >= base_time인데 수집 0행",
+                                    level="WARN",
                                 )
             except Exception:
                 pass
-            # 누락보충 설정이 있고 변환본 마지막 행이 있으면 → base_time ~ 현재 구간 채움
+            # 원본 0행이어도 누락보충(interval) ON 이면 변환본 마지막 ~ 현재 슬롯까지 채움.
             if interval_int > 0 and last_row and base_time is not None:
                 try:
                     _now = datetime.now()
-                    # base_time 이후 채울 구간이 있는지 확인
-                    slot_end = pd.Timestamp(base_time) + timedelta(minutes=interval_int)
-                    if slot_end <= pd.Timestamp(_now):
-                        row_vals = [last_row.get(h, 0.0 if h != "timestamp" else str(base_time)) for h in STANDARD_HEADER]
-                        last_df = pd.DataFrame([row_vals], columns=range(len(STANDARD_HEADER)))
-                        _max_fill = max(24, int(60 / interval_int * 24 * 7))
-                        tail_df = self.fill_interval.fill_from_last_to_now(
-                            last_df, base_time, interval_int,
-                            current_time_limit=_now, max_rows=_max_fill
-                        )
-                        if not tail_df.empty:
-                            if "__filled__" in tail_df.columns:
-                                tail_df = tail_df.drop(columns=["__filled__"])
-                            tail_df.columns = range(tail_df.shape[1])
-                            self._save_append(tail_df, out_path, interval_min=0)
-                            self.logger.log(
-                                f"🔧 원본 0행 누락보충: base_time({base_time}) ~ 현재 {len(tail_df)}행 채움",
-                                level="INFO"
+                    row_vals = [last_row.get(h, 0.0 if h != "timestamp" else str(base_time)) for h in STANDARD_HEADER]
+                    last_df = pd.DataFrame([row_vals], columns=range(len(STANDARD_HEADER)))
+                    _max_fill = max(24, int(60 / interval_int * 24 * 7))
+                    tail_df = self.fill_interval.fill_from_last_to_now(
+                        last_df, base_time, interval_int,
+                        current_time_limit=_now, max_rows=_max_fill
+                    )
+                    if not tail_df.empty:
+                        if "__filled__" in tail_df.columns:
+                            tail_df = tail_df.drop(columns=["__filled__"])
+                        tail_df.columns = range(tail_df.shape[1])
+                        self._save_append(tail_df, out_path, interval_min=0)
+                        if align_60:
+                            self._sync_align60_from_main(
+                                company, site, folder, filename, out_path, force=True
                             )
-                            return "fill"
+                        self.logger.log(
+                            f"누락보충: {company}/{site}/{folder}/{filename} "
+                            f"(+{len(tail_df)}행)",
+                            level="INFO",
+                        )
+                        return "fill"
                 except Exception as e:
                     self.logger.log(f"⚠️ 원본 0행 누락보충 실패: {e}", level="WARN")
 
-            self.logger.log(f"변환 대상 없음 → 스킵: {company}/{site}/{folder}/{filename}", level="INFO")
+            self.logger.log(
+                f"변환 대상 없음 → 스킵: {company}/{site}/{folder}/{filename}",
+                level="DEBUG",
+            )
+            if align_60 and os.path.exists(out_path):
+                if self._sync_align60_from_main(
+                    company, site, folder, filename, out_path
+                ):
+                    return "converted"
             return "skipped"
 
-        self.logger.log(f"🔍 last_row 타입: {type(last_row)}, 값: {last_row}", level="INFO")
+        self.logger.log(f"🔍 last_row 타입: {type(last_row)}", level="DEBUG")
         if last_row:
-            self.logger.log(f"✅ 변환본 마지막 값 읽음: {last_row}", level="INFO")
+            self.logger.log(f"✅ 변환본 마지막 값 읽음", level="DEBUG")
         else:
-            self.logger.log(f"⚠️ 변환본 마지막 값 없음 (최초 변환 또는 읽기 실패)", level="INFO")
+            self.logger.log(f"⚠️ 변환본 마지막 값 없음 (최초 변환 또는 읽기 실패)", level="DEBUG")
 
         # 3단계: DataFrame 생성
         df = pd.read_csv(
@@ -258,7 +361,10 @@ class FileProcessor:
         )
 
         if df.empty:
-            self.logger.log("DataFrame 비어있음 → 스킵", level="INFO")
+            self.logger.log(
+                f"건너뜀(빈 데이터): {company}/{site}/{folder}/{filename}",
+                level="WARN",
+            )
             return "skipped"
 
         # timestamp 파싱 불가(NaT) 행은 이후 파이프라인(정렬/배터리 이동 등)을 망치므로 제거
@@ -273,9 +379,15 @@ class FileProcessor:
                 dropped = int((~valid_mask).sum())
                 df = df.loc[valid_mask].copy().reset_index(drop=True)
                 if dropped > 0:
-                    self.logger.log(f"⚠️ timestamp 파싱 실패 행 제거: {dropped}행", level="INFO")
+                    self.logger.log(
+                        f"timestamp 파싱 실패 행 제거: {dropped}행",
+                        level="DEBUG",
+                    )
             if df.empty:
-                self.logger.log("유효 timestamp 행 없음 → 스킵", level="WARN")
+                self.logger.log(
+                    f"건너뜀(시간 파싱 실패): {company}/{site}/{folder}/{filename}",
+                    level="WARN",
+                )
                 return "skipped"
         except Exception:
             # 안전: 파싱 실패해도 기존 흐름 유지 (아래 시간 범위 체크에서 걸러짐)
@@ -300,27 +412,50 @@ class FileProcessor:
                     dropped_past = int((parsed_times.notna() & (parsed_times < bt)).sum())
                     if dropped_past > 0:
                         self.logger.log(
-                            f"⚠️ base_time 이전 데이터 {dropped_past}행 제거 후 계속 진행 (base_time={bt})",
-                            level="WARN",
+                            f"base_time 이전 데이터 {dropped_past}행 제거 (base_time={bt})",
+                            level="DEBUG",
                         )
                     df = df.loc[keep_mask].copy().reset_index(drop=True)
                     parsed_times = pd.to_datetime(df.iloc[:, 0], errors="coerce", format="mixed")
                     valid_times = parsed_times[parsed_times.notna()]
                     if len(valid_times) == 0:
-                        self.logger.log("⚠️ base_time 이후 유효 timestamp 행 없음 → 스킵", level="WARN")
+                        self.logger.log(
+                            f"건너뜀(유효 시간 없음): {company}/{site}/{folder}/{filename}",
+                            level="WARN",
+                        )
                         return "skipped"
 
                 min_time = valid_times.min()
                 max_time = valid_times.max()
                 time_range_str = f"{min_time.strftime('%Y-%m-%d %H:%M')} ~ {max_time.strftime('%Y-%m-%d %H:%M')}"
-                self.logger.log(f"📅 변환 대상 시간 범위: {time_range_str} (총 {len(df)}행)", level="INFO")
-                # 콘솔 인코딩(cp949) 환경에서 이모지 출력 시 크래시 방지: Logger로만 출력
+                self.logger.log(
+                    f"변환 대상 시간 범위: {time_range_str} (총 {len(df)}행)",
+                    level="DEBUG",
+                )
             else:
-                self.logger.log(f"⚠️ 유효한 시간 데이터 없음 → 스킵", level="WARN")
+                self.logger.log(
+                    f"건너뜀(유효 시간 없음): {company}/{site}/{folder}/{filename}",
+                    level="WARN",
+                )
                 return "skipped"
         except Exception as e:
-            self.logger.log(f"⚠️ 시간 범위 확인 실패: {e} → 스킵", level="WARN")
+            self.logger.log(
+                f"건너뜀(시간 확인 실패): {company}/{site}/{folder}/{filename} — {e}",
+                level="WARN",
+            )
             return "skipped"
+
+        # 현장 옵션: 변환 실행 시점 기준 미래(timestamp) 행 제외
+        try:
+            df = self._drop_rows_timestamp_after_now_if_site_blocked(df, company, site)
+            if df.empty:
+                self.logger.log(
+                    f"건너뜀(시간차단): {company}/{site}/{folder}/{filename}",
+                    level="DEBUG",
+                )
+                return "skipped"
+        except Exception as e:
+            self.logger.log(f"⚠️ 현장 시간차단 필터 실패 (무시): {e}", level="WARN")
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # 📌 변환 파이프라인 (Core Transform)
@@ -366,7 +501,7 @@ class FileProcessor:
             file_cfg["__last_converted_row__"] = last_row
         
         df = self.sensor.process(df, file_cfg)
-        self.logger.log(f"✅ 센서 처리 완료", level="INFO")
+        self.logger.log("센서 처리 완료", level="DEBUG")
         
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # 🔧 STEP 4: 소수점 처리 - 새 데이터만 처리
@@ -394,8 +529,8 @@ class FileProcessor:
                 removed = before_map - len(df)
                 if removed > 0:
                     self.logger.log(
-                        f"🔧 슬롯 매핑({interval_int}분): {before_map}행 → {len(df)}행 (중복 {removed}행 제거)",
-                        level="INFO"
+                        f"슬롯 매핑({interval_int}분): {before_map}행 → {len(df)}행",
+                        level="DEBUG",
                     )
 
                 # ② 경계 연결: 변환본 마지막 행 prepend (간격 7일 초과 시 스킵)
@@ -406,44 +541,46 @@ class FileProcessor:
                             gap_min = (pd.Timestamp(first_ts) - pd.Timestamp(base_time)).total_seconds() / 60
                             if gap_min > 60 * 24 * 7:
                                 self.logger.log(
-                                    f"🔧 경계 연결 스킵: base~첫행 간격 {gap_min/60/24:.0f}일 > 7일",
-                                    level="INFO"
+                                    f"경계 연결 스킵: base~첫행 간격 {gap_min/60/24:.0f}일 > 7일",
+                                    level="DEBUG",
                                 )
                             else:
                                 row_vals = [last_row.get(h, 0.0 if h != "timestamp" else str(base_time)) for h in STANDARD_HEADER]
                                 last_df = pd.DataFrame([row_vals], columns=range(len(STANDARD_HEADER)))
                                 if last_df.shape[1] == df.shape[1]:
                                     df = pd.concat([last_df, df], ignore_index=True)
-                                    self.logger.log(f"🔧 경계 연결: last_row prepend", level="INFO")
+                                    self.logger.log("경계 연결: last_row prepend", level="DEBUG")
                     except Exception as e:
                         self.logger.log(f"⚠️ 경계 연결 prepend 스킵: {e}", level="WARN")
 
                 # ③ 빈 슬롯 채움: 이전 행 복사, __filled__ 플래그 부여
-                self.logger.log(f"🔧 누락 보충({interval_int}분): 빈 슬롯 채움", level="INFO")
+                self.logger.log(f"누락 보충({interval_int}분): 빈 슬롯 채움", level="DEBUG")
                 df = self.fill_interval.fill_gaps(df, interval_int).copy()
                 added = getattr(self.fill_interval, "last_added", 0)
 
-                # ④ 마지막 실측 ~ 현재 구간 채움
-                if len(df) > 0 and base_time is not None:
+                # ④ 마지막 실측 슬롯 다음 ~ 현재 슬롯까지 채움
+                #    (실측+N분 게이트 금지 — 08:50 / now 09:30 이면 09:00 슬롯이 막힘)
+                if len(df) > 0:
                     try:
                         last_ts = pd.to_datetime(df.iloc[-1, 0], errors="coerce", format="mixed")
                         if pd.notna(last_ts):
-                            slot_end = last_ts + timedelta(minutes=interval_int)
-                            if slot_end <= pd.Timestamp(_now):
-                                _max_fill = max(24, int(60 / interval_int * 24 * 7)) if interval_int > 0 else 24
-                                tail_df = self.fill_interval.fill_from_last_to_now(
-                                    df.iloc[[-1]].copy(), last_ts, interval_int,
-                                    current_time_limit=_now, max_rows=_max_fill
+                            _max_fill = max(24, int(60 / interval_int * 24 * 7))
+                            tail_df = self.fill_interval.fill_from_last_to_now(
+                                df.iloc[[-1]].copy(), last_ts, interval_int,
+                                current_time_limit=_now, max_rows=_max_fill
+                            )
+                            if not tail_df.empty:
+                                df = pd.concat([df, tail_df], ignore_index=True)
+                                added += len(tail_df)
+                                self.logger.log(
+                                    f"누락 보충: 마지막~현재 {len(tail_df)}행 추가",
+                                    level="DEBUG",
                                 )
-                                if not tail_df.empty:
-                                    df = pd.concat([df, tail_df], ignore_index=True)
-                                    added += len(tail_df)
-                                    self.logger.log(f"🔧 누락 보충: 마지막~현재 {len(tail_df)}행 추가", level="INFO")
                     except Exception as e:
                         self.logger.log(f"⚠️ 마지막~현재 구간 채움 스킵: {e}", level="WARN")
 
                 fill_applied = True
-                self.logger.log(f"✅ 누락 보충 완료 (추가 {added}행)", level="INFO")
+                self.logger.log(f"누락 보충 완료 (추가 {added}행)", level="DEBUG")
             except Exception as e:
                 self.logger.log(f"⚠️ 누락 보충 실패 (무시하고 계속): {e}", level="WARN")
 
@@ -452,19 +589,83 @@ class FileProcessor:
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         if "__filled__" in df.columns:
             df = df.drop(columns=["__filled__"])
-        self.logger.log(f"💾 저장: {len(df)}행 저장", level="INFO")
         self._save_append(df, out_path, interval_min=0)
 
-        # 모니터링 캐시 업데이트 (변환 완료 직후, 실패해도 변환에 영향 없음)
+        if align_60:
+            self._sync_align60_from_main(
+                company, site, folder, filename, out_path, force=True
+            )
+
+        # 모니터링 캐시 업데이트
         try:
             from monitoring.data_cache import update_file_cache
-            update_file_cache(company, folder, filename, df)
+            update_file_cache(company, site, folder, filename, df)
         except Exception:
             pass
 
-        self.logger.log(f"파일 변환 완료: {company}/{site}/{folder}/{filename}", level="DEBUG")
+        tag = "누락보충" if fill_applied else "변환"
+        self.logger.log(
+            f"{tag}: {company}/{site}/{folder}/{filename} (+{len(df)}행)",
+            level="INFO",
+        )
 
         return "fill" if fill_applied else "converted"
+
+    def _drop_rows_timestamp_after_now_if_site_blocked(
+        self,
+        df: pd.DataFrame,
+        company: str,
+        site: str,
+    ) -> pd.DataFrame:
+        """
+        현장 설정 `__time_block_future__`(UI: 시간차단)일 때만:
+        첫 열(timestamp)을 파싱해 **변환 실행 시점(now)보다 늦은** 행을 제거한다.
+        """
+        if df is None or df.empty:
+            return df
+        try:
+            if not self.tree.get_site_time_block_future(company, site):
+                return df
+        except Exception:
+            return df
+
+        try:
+            now_ts = pd.Timestamp(datetime.now())
+        except Exception:
+            return df
+
+        try:
+            try:
+                ts_series = pd.to_datetime(df.iloc[:, 0], errors="coerce", format="mixed")
+            except TypeError:
+                ts_series = pd.to_datetime(df.iloc[:, 0], errors="coerce")
+
+            try:
+                skew_min = 180
+                site_cfg = self.config.data.get(company, {}).get(site, {})
+                if isinstance(site_cfg, dict):
+                    v = site_cfg.get("__time_block_future_skew_min__", None)
+                    if v is not None and str(v).strip() != "":
+                        skew_min = int(float(v))
+                skew_min = max(0, skew_min)
+            except Exception:
+                skew_min = 180
+
+            cutoff_ts = now_ts + pd.Timedelta(minutes=skew_min)
+            fut = ts_series.notna() & (ts_series > cutoff_ts)
+            n_drop = int(fut.sum())
+            if n_drop <= 0:
+                return df
+            keep = ~(fut)
+            out = df.loc[keep].copy().reset_index(drop=True)
+            self.logger.log(
+                f"현장 시간차단: 미래 timestamp {n_drop}행 제외 → {len(out)}행 유지",
+                level="DEBUG",
+            )
+            return out
+        except Exception as e:
+            self.logger.log(f"⚠️ 시간차단 필터 처리 오류: {e}", level="WARN")
+            return df
 
     def _get_last_converted_data(self, out_path):
         """
@@ -472,63 +673,21 @@ class FileProcessor:
         (파일 끝이 아니라 timestamp 최대값 기준 — 순서 꼬임/중복 시에도 올바른 base_time)
         Returns: (timestamp, last_row_data_dict) 또는 (None, None)
         """
+        from utils.csv_last_row import read_max_timestamp_row
+
         if not os.path.exists(out_path):
-            self.logger.log(f"[INFO] 변환본 파일 없음 (최초 변환)", level="INFO")
+            self.logger.log("[INFO] 변환본 파일 없음 (최초 변환)", level="DEBUG")
             return None, None
 
-        self.logger.log(f"[INFO] 변환본 마지막 행 읽기 시작...", level="INFO")
-        
+        self.logger.log("[INFO] 변환본 마지막 행 읽기 시작...", level="DEBUG")
+
         try:
-            # usecols=list(range(24)): STANDARD_HEADER 범위(24열)만 로드 — 초과 열 불필요
-            df_all = pd.read_csv(out_path, header=None, sep=',', engine='python',
-                                 on_bad_lines='skip', encoding='utf-8',
-                                 usecols=list(range(24)))
-            if df_all.empty or len(df_all) < 2:
-                if len(df_all) == 1:
-                    self.logger.log(f"[WARNING] 변환본에 데이터 행 없음", level="WARN")
+            ts, last_row_data = read_max_timestamp_row(out_path, STANDARD_HEADER)
+            if ts is None or last_row_data is None:
+                self.logger.log("[WARNING] 변환본에 유효한 데이터 행 없음", level="WARN")
                 return None, None
 
-            if df_all.iloc[0].astype(str).str.contains('timestamp', case=False, na=False).any():
-                df_data = df_all.iloc[1:].copy()
-            else:
-                df_data = df_all.copy()
-
-            if df_data.empty:
-                return None, None
-
-            try:
-                ts_col = pd.to_datetime(df_data.iloc[:, 0], errors='coerce', format='mixed')
-            except TypeError:
-                ts_col = pd.to_datetime(df_data.iloc[:, 0], errors='coerce')
-            valid = ts_col.notna()
-            if not valid.any():
-                self.logger.log(f"[WARNING] 변환본에서 유효한 timestamp 없음", level="WARN")
-                return None, None
-
-            idx_max = ts_col.idxmax()
-            last_row_series = df_data.loc[idx_max]
-            ts = ts_col.loc[idx_max]
-
-            last_row_data = {}
-            STRING_COLS = ("timestamp", "deviceId", "STX")
-            for i, col_name in enumerate(STANDARD_HEADER):
-                if i < len(last_row_series):
-                    try:
-                        if col_name in STRING_COLS:
-                            last_row_data[col_name] = str(last_row_series.iloc[i]).strip() if pd.notna(last_row_series.iloc[i]) else ("2026-01-01 00:00" if col_name == "timestamp" else "")
-                        else:
-                            val = pd.to_numeric(last_row_series.iloc[i], errors="coerce")
-                            last_row_data[col_name] = float(val) if pd.notna(val) else 0.0
-                    except Exception:
-                        last_row_data[col_name] = 0.0 if col_name not in STRING_COLS else ("" if col_name != "timestamp" else "2026-01-01 00:00")
-                else:
-                    last_row_data[col_name] = 0.0 if col_name not in STRING_COLS else ("" if col_name != "timestamp" else "2026-01-01 00:00")
-
-            self.logger.log(f"[OK] 마지막 행 읽기 성공 (시간순 마지막: {ts})", level="INFO")
-            self.logger.log(
-                f"   AmountCH0={last_row_data.get('AmountCH0')}, AmountCH1={last_row_data.get('AmountCH1')}, AmountCH2={last_row_data.get('AmountCH2')}",
-                level="INFO"
-            )
+            self.logger.log(f"[OK] 마지막 행 읽기 성공 (시간순 마지막: {ts})", level="DEBUG")
             return ts, last_row_data
 
         except Exception as e:
@@ -539,114 +698,281 @@ class FileProcessor:
 
     def _collect_target_lines(self, src_path, base_time):
         """
-        원본 파일에서 base_time 이후 행만 수집
-        
-        시간 필터링 규칙:
-        - 최소 연도: 2000년
-        - 최대 연도: 현재 연도 + 1년
-        - 파싱 불가능한 시간: 제외
+        원본에서 base_time 이상 행만 수집.
+
+        최적화 (증분 변환):
+        - peek로 원본 끝이 base_time 이전이면 즉시 []
+        - 파일 끝에서 창을 키워 읽다, 창 안 최소 timestamp < base_time 이면 중단
+          (로거 append-only 가정 — 새 데이터는 끝에 있음)
+        - 창이 과대해지거나 비정상이면 전체 scan 폴백
         """
         from datetime import datetime
-        
-        lines = []
-        skipped_count = 0
-        skipped_old = 0  # 2000년 이전
-        skipped_future = 0  # 미래 연도
-        skipped_parse_error = 0  # 파싱 실패
-        
+        from utils.csv_last_row import peek_last_timestamp
+
+        if not os.path.exists(src_path):
+            return []
+
         current_year = datetime.now().year
-        max_year = current_year + 1  # 현재 + 1년까지 허용
+        max_year = current_year + 1
+        base_ts = pd.Timestamp(base_time) if base_time is not None else None
 
-        def _extract_first_field(raw_line: str) -> str:
-            """
-            원본 라인에서 timestamp 후보(첫 필드)를 최대한 안전하게 추출.
-            - 다른 PC/로거에서 구분자가 ','가 아닐 수 있음(예: ';', 탭)
-            - BOM/따옴표/공백 등 전처리
-            """
-            if raw_line is None:
-                return ""
-            s = str(raw_line).strip()
-            if not s:
-                return ""
-            # BOM 제거
-            s = s.lstrip("\ufeff")
+        if base_ts is not None:
+            last = peek_last_timestamp(src_path)
+            if last is not None and pd.notna(last) and last < base_ts:
+                self.logger.log(
+                    f"원본 끝({last}) < base_time({base_ts}) → 수집 0행 (전체 scan 생략)",
+                    level="DEBUG",
+                )
+                return []
 
-            # 우선순위: 콤마 / 세미콜론 / 탭
-            for sep in (",", ";", "\t"):
-                if sep in s:
-                    return s.split(sep, 1)[0].strip().strip('"').strip("'")
+            try:
+                lines = self._collect_target_lines_tail_window(
+                    src_path, base_ts, max_year
+                )
+                if lines is not None:
+                    return lines
+                self.logger.log(
+                    "원본 tail 수집 폴백 → 전체 scan",
+                    level="DEBUG",
+                )
+            except Exception as e:
+                self.logger.log(
+                    f"원본 tail 수집 실패 → 전체 scan: {e}",
+                    level="DEBUG",
+                )
 
-            # 구분자 탐지 실패: 공백으로만 구분된 경우도 있으니 첫 토큰만
-            return s.split()[0].strip().strip('"').strip("'")
+        return self._collect_target_lines_full(src_path, base_ts, max_year)
 
-        # 자주 등장하는 포맷 순서 — strptime은 pandas보다 훨씬 빠름
-        _FAST_FMTS = (
+    def _collect_target_lines_tail_window(self, src_path, base_ts, max_year):
+        """
+        파일 끝 창을 256KB→… 로 키우며 base_time 이상 행 수집.
+        창 내 최소 timestamp < base_time 이면 충분(그 앞은 더 오래됨).
+        Returns: list[str] 또는 None(폴백)
+        """
+        file_size = os.path.getsize(src_path)
+        if file_size <= 0:
+            return []
+
+        max_window = min(file_size, 32 * 1024 * 1024)  # 32MB 초과 시 폴백
+        window = min(256 * 1024, file_size)
+
+        while True:
+            lines_raw, truncated = self._read_file_tail_lines(src_path, window)
+            pairs = []
+            min_ts = None
+            for line in lines_raw:
+                ts = self._parse_source_line_ts(line)
+                if ts is None:
+                    continue
+                if ts.year < 2000 or ts.year > max_year:
+                    continue
+                if min_ts is None or ts < min_ts:
+                    min_ts = ts
+                if ts >= base_ts:
+                    pairs.append((ts, line))
+
+            # 창이 파일 전체이거나, 창이 base_time 이전까지 덮음 → 완료
+            if (not truncated) or (min_ts is not None and min_ts < base_ts):
+                pairs.sort(key=lambda x: x[0])
+                return [ln for _, ln in pairs]
+
+            if window >= max_window:
+                return None  # 너무 큼 → 전체 scan
+
+            window = min(window * 4, max_window, file_size)
+
+    def _read_file_tail_lines(self, path, max_bytes):
+        """파일 끝 max_bytes → (lines in order, truncated_at_start)."""
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            pos = f.tell()
+            if pos == 0:
+                return [], False
+            read_size = min(pos, max_bytes)
+            start = pos - read_size
+            f.seek(start)
+            chunk = f.read(read_size)
+
+        truncated = start > 0
+        text = chunk.decode("utf-8", errors="ignore")
+        lines = text.splitlines()
+        if truncated and lines:
+            lines = lines[1:]
+        return [ln.strip() for ln in lines if ln.strip()], truncated
+
+    @staticmethod
+    def _parse_source_line_ts(line):
+        """원본 한 줄에서 timestamp 파싱. 실패 시 None."""
+        from datetime import datetime as _dt
+
+        if not line or line.lower().startswith("timestamp"):
+            return None
+        s = str(line).strip().lstrip("\ufeff")
+        first = s
+        for sep in (",", ";", "\t"):
+            if sep in s:
+                first = s.split(sep, 1)[0].strip().strip('"').strip("'")
+                break
+        else:
+            parts = s.split()
+            first = parts[0].strip().strip('"').strip("'") if parts else ""
+        if not first:
+            return None
+        for fmt in (
             "%Y-%m-%d %H:%M:%S",
             "%Y-%m-%d %H:%M",
             "%Y/%m/%d %H:%M:%S",
             "%Y/%m/%d %H:%M",
-        )
-
-        def _fast_parse(s: str):
-            """strptime으로 빠르게 파싱, 실패 시 pd.to_datetime 폴백"""
-            for fmt in _FAST_FMTS:
-                try:
-                    return pd.Timestamp(datetime.strptime(s, fmt))
-                except ValueError:
-                    continue
-            # 폴백: 비표준 포맷 처리
+        ):
             try:
-                return pd.to_datetime(s, errors="coerce", format="mixed")
-            except TypeError:
-                return pd.to_datetime(s, errors="coerce")
+                return pd.Timestamp(_dt.strptime(first, fmt))
+            except ValueError:
+                continue
+        try:
+            ts = pd.to_datetime(first, errors="coerce", format="mixed")
+        except TypeError:
+            ts = pd.to_datetime(first, errors="coerce")
+        return ts if pd.notna(ts) else None
+
+    def _collect_target_lines_full(self, src_path, base_ts, max_year=None):
+        """원본 전체 1-pass 수집 (최초 변환·tail 폴백)."""
+        from datetime import datetime
+
+        lines = []
+        skipped_count = 0
+        skipped_old = 0
+        skipped_future = 0
+        skipped_parse_error = 0
+
+        if max_year is None:
+            max_year = datetime.now().year + 1
 
         with open(src_path, "rb") as f:
             for raw in f:
                 line = raw.decode("utf-8", errors="ignore").strip()
                 if not line:
                     continue
-
-                first = _extract_first_field(line)
-                if not first:
+                ts = self._parse_source_line_ts(line)
+                if ts is None:
                     skipped_count += 1
                     skipped_parse_error += 1
                     continue
-
-                ts = _fast_parse(first)
-
-                # 시간 필터링
-                if pd.isna(ts):
-                    skipped_count += 1
-                    skipped_parse_error += 1
-                    continue
-                
                 if ts.year < 2000:
                     skipped_count += 1
                     skipped_old += 1
                     continue
-                
                 if ts.year > max_year:
                     skipped_count += 1
                     skipped_future += 1
                     continue
-
-                # base_time 기준: 같은 시간대(슬롯) 포함 — 원본에 동일 시각이 없어도 비슷한 시간(같은 구간) 수집
-                if base_time is None:
+                if base_ts is None or ts >= base_ts:
                     lines.append(line)
-                else:
-                    # base_time 이상 수집 (같은 시각·같은 구간 포함 → 매핑 단계에서 슬롯당 가장 가까운 행 사용)
-                    if ts >= base_time:
-                        lines.append(line)
 
-        # 필터링 통계 로그
         if skipped_count > 0:
             self.logger.log(
                 f"⚠️ 비정상 시간 데이터 제외: 총 {skipped_count}개 "
-                f"(2000년 이전: {skipped_old}, {max_year}년 초과: {skipped_future}, 파싱 실패: {skipped_parse_error})",
-                level="INFO"
+                f"(2000년 이전: {skipped_old}, {max_year}년 초과: {skipped_future}, "
+                f"파싱 실패: {skipped_parse_error})",
+                level="DEBUG",
             )
-
         return lines
+
+    def _convert_neo_blast_file(self, company, site, folder, filename, folder_cfg, file_cfg):
+        """Neo Blast (.blast/.txt) 폴더 → 마스터 CSV 동기화."""
+        from core.neo_blast_processor import sync_neo_blast_folder
+
+        source_dir = (file_cfg.get("__nb_source_dir__") or folder_cfg.get("__absolute_path__") or "").strip()
+        if not source_dir or not os.path.isdir(source_dir):
+            self.logger.log(
+                f"[NB] 원본 폴더 없음 → 스킵: {company}/{site}/{folder}/{filename}",
+                level="WARN",
+            )
+            return "skipped"
+
+        from utils.convert_paths import prepare_convert_out_path
+
+        out_path = prepare_convert_out_path(
+            self.convert_root, company, site, folder, filename, logger=self.logger
+        )
+
+        stats = sync_neo_blast_folder(source_dir, out_path, logger=self.logger)
+        if stats["appended"] > 0:
+            return "converted"
+        if stats["parsed"] > 0 and stats["skipped_dup"] > 0:
+            return "skipped"
+        if stats["failed"] > 0 and stats["appended"] == 0:
+            return "error"
+        return "skipped"
+
+    def append_gen_interval_source_row(self, csv_path: str) -> bool:
+        """
+        __gen_interval__ 스케줄용: 원본 CSV에 현재 시각 + 0값 행 1줄 추가.
+        (변환 파이프라인과 분리 — 원본에 행 추가 후 다음 convert_file 에서 반영)
+        """
+        import datetime
+
+        if not csv_path or not os.path.exists(csv_path):
+            self.logger.log(f"[gen_interval] CSV 없음 → {csv_path}", level="WARN")
+            return False
+
+        try:
+            df = pd.read_csv(csv_path, sep=None, engine="python", on_bad_lines="skip")
+        except Exception as e:
+            self.logger.log(f"[gen_interval] CSV 읽기 실패 → {e}", level="ERROR")
+            return False
+
+        if df.empty:
+            return False
+
+        folder_name = os.path.basename(os.path.dirname(csv_path))
+        file_stem = os.path.splitext(os.path.basename(csv_path))[0]
+        b_col = df.columns[1] if len(df.columns) > 1 else None
+        f_col = df.columns[5] if len(df.columns) > 5 else None
+
+        now_str = datetime.datetime.now().replace(second=0, microsecond=0).strftime(
+            "%Y-%m-%d %H:%M"
+        )
+
+        time_col = "timestamp" if "timestamp" in df.columns else df.columns[0]
+
+        def _excel_col_to_index(col_label: str) -> int:
+            if not isinstance(col_label, str) or col_label == "":
+                return 0
+            col_label = col_label.upper().strip()
+            idx = 0
+            for ch in col_label:
+                if "A" <= ch <= "Z":
+                    idx = idx * 26 + (ord(ch) - ord("A") + 1)
+                else:
+                    break
+            return max(0, idx - 1)
+
+        try:
+            bg_index = min(_excel_col_to_index("BG"), len(df.columns) - 1)
+        except Exception:
+            bg_index = len(df.columns) - 1
+
+        new_row = {}
+        for i, col in enumerate(df.columns):
+            if col == time_col:
+                new_row[col] = now_str
+            elif b_col and col == b_col:
+                new_row[col] = folder_name
+            elif f_col and col == f_col:
+                new_row[col] = file_stem
+            elif i <= bg_index:
+                new_row[col] = 0
+            else:
+                new_row[col] = ""
+
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        try:
+            df.to_csv(csv_path, index=False)
+            self.logger.log(f"[gen_interval] 원본 행 추가: {csv_path}", level="DEBUG")
+            return True
+        except Exception as e:
+            self.logger.log(f"[gen_interval] CSV 저장 실패 → {e}", level="ERROR")
+            return False
 
     def _move_battery(self, df):
         """배터리 이동: 56열(batLevel) → 3열(battery)"""
@@ -687,6 +1013,89 @@ class FileProcessor:
         
         return df
 
+    @staticmethod
+    def _align60_needs_sync(main_path: str, align60_path: str) -> bool:
+        """10분 변환본 대비 _60.csv 생성·갱신 필요 여부."""
+        if not os.path.exists(main_path):
+            return False
+        if not os.path.exists(align60_path):
+            return True
+        try:
+            return os.path.getmtime(main_path) > os.path.getmtime(align60_path)
+        except OSError:
+            return True
+
+    def _sync_align60_from_main(
+        self,
+        company,
+        site,
+        folder,
+        filename,
+        main_path,
+        *,
+        force: bool = False,
+    ) -> bool:
+        """
+        10분 변환본(main_path)을 읽어 60분 슬롯당 1행만 남긴 _60.csv 생성.
+        센서·누락보충은 10분 파일에만 적용 — _60은 그 결과를 정렬한 사본.
+        """
+        try:
+            from utils.convert_paths import prepare_align60_out_path
+
+            out_path_60 = prepare_align60_out_path(
+                self.convert_root, company, site, folder, filename, logger=self.logger
+            )
+            if not os.path.exists(main_path):
+                return False
+            if not force and not self._align60_needs_sync(main_path, out_path_60):
+                return False
+            if self._rebuild_align60_from_main(main_path, out_path_60):
+                self.logger.log(
+                    f"60분 정렬: {os.path.basename(main_path)} → "
+                    f"{os.path.basename(out_path_60)} (10분 변환본과 동일 값)",
+                    level="INFO",
+                )
+                return True
+        except Exception as e:
+            self.logger.log(f"⚠️ 60분 정렬 실패: {e}", level="WARN")
+        return False
+
+    def _read_converted_dataframe(self, out_path: str) -> pd.DataFrame:
+        """변환본 CSV 전체를 STANDARD_HEADER DataFrame으로 읽는다."""
+        if not os.path.exists(out_path):
+            return pd.DataFrame(columns=STANDARD_HEADER)
+        try:
+            raw = pd.read_csv(
+                out_path, header=None, encoding="utf-8-sig", on_bad_lines="skip"
+            )
+            if raw.empty:
+                return pd.DataFrame(columns=STANDARD_HEADER)
+            if raw.iloc[0].astype(str).str.contains("timestamp", case=False, na=False).any():
+                raw = raw.iloc[1:]
+            if raw.empty:
+                return pd.DataFrame(columns=STANDARD_HEADER)
+            ncol = min(raw.shape[1], len(STANDARD_HEADER))
+            df = raw.iloc[:, :ncol].copy()
+            df.columns = list(STANDARD_HEADER[:ncol])
+            for j in range(ncol, len(STANDARD_HEADER)):
+                df[STANDARD_HEADER[j]] = 0.0
+            return df[STANDARD_HEADER]
+        except Exception as e:
+            self.logger.log(f"[WARN] 변환본 전체 읽기 실패: {out_path} — {e}", level="WARN")
+            return pd.DataFrame(columns=STANDARD_HEADER)
+
+    def _rebuild_align60_from_main(self, main_path: str, align60_path: str) -> bool:
+        """10분 변환본 전체 → map_slots(60). CH 값은 10분본과 동일, 행만 시간당 1개."""
+        df = self._read_converted_dataframe(main_path)
+        if df.empty:
+            return False
+        aligned = self.fill_interval.map_slots(df, 60)
+        if aligned.empty:
+            return False
+        os.makedirs(os.path.dirname(align60_path), exist_ok=True)
+        aligned.to_csv(align60_path, index=False, header=True, encoding="utf-8-sig")
+        self._log_saved_file_state(align60_path, context="align60-rebuild", df=aligned)
+        return True
 
     def _save_append(self, df, out_path, interval_min=0):
         """변환본 저장 (최초: 생성, 이후: 기존+신규 병합 → 시간순 정렬 → 슬롯 중복 제거 후 저장)"""
@@ -765,9 +1174,9 @@ class FileProcessor:
         try:
             st = os.stat(out_path)
             self.logger.log(
-                f"[INFO] 💾 저장 확인({context}): size={st.st_size} bytes, "
+                f"저장 확인({context}): size={st.st_size} bytes, "
                 f"mtime={datetime.fromtimestamp(st.st_mtime).strftime('%Y-%m-%d %H:%M:%S')} - {out_path}",
-                level="INFO",
+                level="DEBUG",
             )
 
             # 이미 메모리에 있는 df로 통계 계산 (재읽기 없음)
@@ -781,14 +1190,15 @@ class FileProcessor:
                     valid = ts.dropna()
                     if len(valid) > 0:
                         self.logger.log(
-                            f"[INFO] 📈 저장 결과({context}): rows={len(df)}, "
-                            f"time_range={valid.min().strftime('%Y-%m-%d %H:%M')} ~ {valid.max().strftime('%Y-%m-%d %H:%M')}",
-                            level="INFO",
+                            f"저장 결과({context}): rows={len(df)}, "
+                            f"time_range={valid.min().strftime('%Y-%m-%d %H:%M')} ~ "
+                            f"{valid.max().strftime('%Y-%m-%d %H:%M')}",
+                            level="DEBUG",
                         )
                     else:
                         self.logger.log(
-                            f"[WARN] 📈 저장 결과({context}): timestamp 유효행 0 - {out_path}",
-                            level="WARN",
+                            f"저장 결과({context}): timestamp 유효행 0 - {out_path}",
+                            level="DEBUG",
                         )
                 except Exception:
                     pass

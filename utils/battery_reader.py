@@ -15,11 +15,12 @@ class BatteryReader:
     def read_last_battery(self, csv_path: str):
         """
         변환된 CSV 파일의 마지막 행에서 4번째 열(인덱스 3)의 배터리 값을 읽는다.
+        파일 없음·열 없음·빈 값·파싱 실패 시 0.0 반환.
         """
         if not csv_path or not os.path.exists(csv_path):
             if self.logger:
-                self.logger.log(f"[BatteryReader] 파일 없음: {csv_path}", level="DEBUG")
-            return None
+                self.logger.log(f"[BatteryReader] 파일 없음: {csv_path} → 0.0", level="DEBUG")
+            return 0.0
 
         try:
             # 파일 끝에서부터 역순으로 읽어서 마지막 행 찾기
@@ -66,21 +67,28 @@ class BatteryReader:
                         
                         if len(parts) >= 4:
                             raw = parts[3].strip().strip('"')
-                            if raw:
-                                try:
-                                    battery_value = float(raw)
-                                    if self.logger:
-                                        self.logger.log(
-                                            f"[BatteryReader] 배터리 읽기 성공: {csv_path} → {battery_value}%",
-                                            level="DEBUG"
-                                        )
-                                    return battery_value
-                                except (ValueError, TypeError) as e:
-                                    if self.logger:
-                                        self.logger.log(
-                                            f"[BatteryReader] 배터리 값 변환 실패: {csv_path}, 값: '{raw}', 오류: {e}",
-                                            level="DEBUG"
-                                        )
+                            if not raw:
+                                if self.logger:
+                                    self.logger.log(
+                                        f"[BatteryReader] 배터리 열 비어 있음: {csv_path} → 0.0",
+                                        level="DEBUG",
+                                    )
+                                return 0.0
+                            try:
+                                battery_value = float(raw)
+                                if self.logger:
+                                    self.logger.log(
+                                        f"[BatteryReader] 배터리 읽기 성공: {csv_path} → {battery_value}%",
+                                        level="DEBUG",
+                                    )
+                                return battery_value
+                            except (ValueError, TypeError) as e:
+                                if self.logger:
+                                    self.logger.log(
+                                        f"[BatteryReader] 배터리 값 변환 실패: {csv_path}, 값: '{raw}', 오류: {e} → 0.0",
+                                        level="DEBUG",
+                                    )
+                                return 0.0
 
                     else:
                         buf += b
@@ -105,26 +113,38 @@ class BatteryReader:
                         parts.append(current)
                         
                         if len(parts) >= 4:
+                            raw = parts[3].strip().strip('"')
+                            if not raw:
+                                if self.logger:
+                                    self.logger.log(
+                                        f"[BatteryReader] 배터리 열 비어 있음 (마지막 행): {csv_path} → 0.0",
+                                        level="DEBUG",
+                                    )
+                                return 0.0
                             try:
-                                raw = parts[3].strip().strip('"')
-                                if raw:
-                                    battery_value = float(raw)
-                                    if self.logger:
-                                        self.logger.log(
-                                            f"[BatteryReader] 배터리 읽기 성공 (마지막 행): {csv_path} → {battery_value}%",
-                                            level="DEBUG"
-                                        )
-                                    return battery_value
+                                battery_value = float(raw)
+                                if self.logger:
+                                    self.logger.log(
+                                        f"[BatteryReader] 배터리 읽기 성공 (마지막 행): {csv_path} → {battery_value}%",
+                                        level="DEBUG",
+                                    )
+                                return battery_value
                             except (ValueError, TypeError):
-                                pass
+                                if self.logger:
+                                    self.logger.log(
+                                        f"[BatteryReader] 배터리 값 변환 실패 (마지막 행): {csv_path} → 0.0",
+                                        level="DEBUG",
+                                    )
+                                return 0.0
 
         except Exception as e:
             if self.logger:
                 self.logger.log(
-                    f"[BatteryReader] 배터리 읽기 오류: {csv_path}, 오류: {e}",
+                    f"[BatteryReader] 배터리 읽기 오류: {csv_path}, 오류: {e} → 0.0",
                     level="ERROR"
                 )
+            return 0.0
 
         if self.logger:
-            self.logger.log(f"[BatteryReader] 배터리 읽기 실패: {csv_path}", level="DEBUG")
-        return None
+            self.logger.log(f"[BatteryReader] 배터리 읽기 실패: {csv_path} → 0.0", level="DEBUG")
+        return 0.0

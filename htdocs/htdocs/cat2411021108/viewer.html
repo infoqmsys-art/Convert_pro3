@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Viewer</title>
+</head>
+<body>
+    <h1>라인 번호 선택</h1>
+    <form action="" method="GET">
+        <label for="line_number">라인 번호:</label>
+        <select name="line_number" id="line_number">
+            <!-- 파일 목록은 이곳에 동적으로 삽입됩니다 -->
+        </select>
+        <input type="submit" value="데이터 보기">
+    </form>
+
+    <div id="data-display">
+        <!-- 선택한 파일의 데이터가 이곳에 표시됩니다 -->
+    </div>
+
+    <script>
+        // JavaScript로 파일 목록을 불러와서 드롭다운에 추가
+        fetch('files.php')
+            .then(response => response.json())
+            .then(files => {
+                const select = document.getElementById('line_number');
+                files.forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = file;
+                    option.textContent = file;
+                    select.appendChild(option);
+                });
+            });
+
+        // 폼 제출 시 데이터 표시
+        document.querySelector('form').addEventListener('submit', function(event) {
+            event.preventDefault(); // 기본 제출 동작 방지
+            const lineNumber = document.getElementById('line_number').value;
+
+            // 선택한 라인 넘버에 대한 데이터를 요청
+            fetch(`data.php?line_number=${lineNumber}`)
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('data-display').innerText = data;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+        });
+    </script>
+</body>
+</html>

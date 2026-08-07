@@ -26,9 +26,10 @@ def default_channel_config():
         "mode": "PASS",
         "base": "",
         "scale": "",
+        "post_offset": "",
         "decimal": "",
         "label": "",
-        "initial": ""
+        "initial": "",
     }
 
 
@@ -132,6 +133,7 @@ class ChannelSettingsUI:
         # 전역 옵션 기본값
         file_cfg.setdefault("__fill_interval__", 0)
         file_cfg.setdefault("__gen_interval__", 0)
+        file_cfg.setdefault("__align_60__", False)
         file_cfg.setdefault("__note__", "")  # 파일별 비고
 
         final_cfg = deepcopy(file_cfg)
@@ -155,6 +157,7 @@ class ChannelSettingsUI:
             # 나머지 파라미터 기본값
             merged.setdefault("base", "")
             merged.setdefault("scale", "")
+            merged.setdefault("post_offset", "")
             merged.setdefault("decimal", "")
             merged.setdefault("label", "")
             merged.setdefault("initial", "")
@@ -175,7 +178,7 @@ class ChannelSettingsUI:
         CH0~CH7의 초기치를 반환합니다.
         
         우선순위:
-        1. 변환된 파일 (convert_root/company/folder/filename)
+        1. 변환된 파일 ({convert_root}/{company}/{folder}/{filename})
         2. 원본 파일 (__absolute_path__/filename)
         
         초기치는 파일의 첫 번째 데이터 행(헤더 제외)에서 추출됩니다.
@@ -186,13 +189,14 @@ class ChannelSettingsUI:
         initial_values = {}
         
         try:
-            # 1. 변환된 파일 경로 확인
-            # 경로: C:\data\Convertfile\{company}\{folder}\{filename} (폴더명 매핑)
-            convert_path = os.path.join(
+            from utils.convert_paths import resolve_convert_out_path
+
+            convert_path = resolve_convert_out_path(
                 self.file_processor.convert_root,
                 self.company,
+                self.site,
                 self.folder,
-                self.filename
+                self.filename,
             )
             
             csv_path = None
@@ -367,7 +371,7 @@ class ChannelSettingsUI:
             padding=12,
             style="TLabelframe"
         )
-        opt_frame.grid(row=1, column=0, columnspan=7, sticky="ew", pady=(0, 15))
+        opt_frame.grid(row=1, column=0, columnspan=8, sticky="ew", pady=(0, 15))
         
         file_opt = tk.Frame(opt_frame, bg="white")
         file_opt.pack(fill="x")
@@ -397,8 +401,8 @@ class ChannelSettingsUI:
         # 설명 라벨
         desc_text = {
             0: "비활성화",
-            10: "10분 간격",
-            60: "60분 간격"
+            10: "10분마다 1행 (빈 슬롯·현재까지 채움)",
+            60: "1시간마다 1행 (빈 슬롯·현재까지 채움)",
         }.get(self.fill_interval_var.get(), "비활성화")
         
         desc_label = tk.Label(
@@ -412,10 +416,33 @@ class ChannelSettingsUI:
         
         def update_desc(*args):
             val = self.fill_interval_var.get()
-            new_text = {0: "비활성화", 10: "10분 간격", 60: "60분 간격"}.get(val, "비활성화")
+            new_text = {
+                0: "비활성화",
+                10: "10분마다 1행 (빈 슬롯·현재까지 채움)",
+                60: "1시간마다 1행 (빈 슬롯·현재까지 채움)",
+            }.get(val, "비활성화")
             desc_label.config(text=f"({new_text})")
         
         self.fill_interval_var.trace_add("write", update_desc)
+
+        # 60분 정렬 파일 (EL/CR용 — 누락보충과 별개)
+        self.align_60_var = tk.BooleanVar(
+            value=bool(self.file_cfg.get("__align_60__", False))
+        )
+        align_row = tk.Frame(opt_frame, bg="white")
+        align_row.pack(fill="x", pady=(8, 0))
+        ttk.Checkbutton(
+            align_row,
+            text="60분 정렬 파일 생성 (10분 변환본을 시간당 1행으로 정렬 → 파일명_60.csv)",
+            variable=self.align_60_var,
+        ).pack(anchor="w")
+        tk.Label(
+            align_row,
+            text="센서·누락보충은 10분 파일만. _60은 저장된 10분본과 동일 값, EL·CR 등록용.",
+            foreground="#7F8C8D",
+            font=("맑은 고딕", 8),
+            bg="white",
+        ).pack(anchor="w", padx=(22, 0))
 
         # 주기 생성
         tk.Label(
@@ -473,7 +500,7 @@ class ChannelSettingsUI:
             text="비고", 
             padding=10
         )
-        note_frame.grid(row=2, column=0, columnspan=7, sticky="ew", pady=(0, 15))
+        note_frame.grid(row=2, column=0, columnspan=8, sticky="ew", pady=(0, 15))
         
         file_note = self.file_cfg.get("__note__", "")
         note_entry = tk.Text(
@@ -494,8 +521,8 @@ class ChannelSettingsUI:
 
         # ---------------- 채널 설정 헤더 ----------------
         # 헤더 정의 및 컬럼 너비 설정
-        headers = ["채널", "모드", "base", "scale", "소수점", "센서명(label)", "초기치"]
-        col_widths = [12, 14, 10, 10, 8, 20, 18]  # 각 열의 문자 너비
+        headers = ["채널", "모드", "base", "scale", "변환후+", "소수점", "센서명(label)", "초기치"]
+        col_widths = [16, 14, 10, 10, 8, 8, 20, 18]  # 각 열의 문자 너비 (채널: 칼럼+인덱스)
         
         for i, h in enumerate(headers):
             tk.Label(
@@ -509,7 +536,7 @@ class ChannelSettingsUI:
             ).grid(row=3, column=i, padx=2, pady=8, sticky="ew")
         
         # 컬럼 가중치 설정 (너비 맞추기)
-        for i in range(7):
+        for i in range(8):
             frame.columnconfigure(i, weight=0)
 
         # ---------------- 채널 설정 ----------------
@@ -525,10 +552,10 @@ class ChannelSettingsUI:
             mode_var = tk.StringVar(value=cfg["mode"])
             label_var = tk.StringVar(value=str(cfg["label"]))
 
-            # 채널명 (엑셀 칼럼 표시)
+            # 채널명 (엑셀 칼럼 + 0-based 인덱스 표시)
             col_idx = 16 + ch  # CH0=16, CH1=17, ..., CH7=23
             excel_col = index_to_excel_col(col_idx)
-            channel_text = f"{key}\n(칼럼{excel_col})"
+            channel_text = f"{key}\n(칼럼{excel_col}, 인덱스{col_idx})"
             
             channel_label = tk.Label(
                 frame, 
@@ -583,6 +610,22 @@ class ChannelSettingsUI:
             )
             scale_entry.pack(fill="both", expand=True)
 
+            # 변환후+(post_offset)
+            po_frame = tk.Frame(frame, bg=row_bg)
+            po_frame.grid(row=row, column=4, padx=2, pady=2, sticky="ew")
+            post_off_var = tk.StringVar(value="" if cfg.get("post_offset") in (None, "") else str(cfg["post_offset"]))
+            post_off_entry = ttk.Entry(
+                po_frame,
+                textvariable=post_off_var,
+                width=col_widths[4],
+                font=("맑은 고딕", 9),
+            )
+            post_off_entry.pack(fill="both", expand=True)
+            ToolTip(
+                post_off_entry,
+                "모드 계산 결과에 마지막으로 더하는 값(JSON: post_offset).\n비우면 0. PASS 포함 모든 모드에 적용.\n예: 보정량 +12.34",
+            )
+
             on_mode_change = self._make_mode_change_handler(
                 mode_var,
                 base_entry,
@@ -598,22 +641,22 @@ class ChannelSettingsUI:
 
             # 소수점 (배경색을 위한 Frame으로 감싸기)
             decimal_frame = tk.Frame(frame, bg=row_bg)
-            decimal_frame.grid(row=row, column=4, padx=2, pady=2, sticky="ew")
+            decimal_frame.grid(row=row, column=5, padx=2, pady=2, sticky="ew")
             decimal_entry = ttk.Entry(
                 decimal_frame, 
                 textvariable=decimal_var, 
-                width=col_widths[4],
+                width=col_widths[5],
                 font=("맑은 고딕", 9)
             )
             decimal_entry.pack(fill="both", expand=True)
 
             # label (배경색을 위한 Frame으로 감싸기)
             label_frame = tk.Frame(frame, bg=row_bg)
-            label_frame.grid(row=row, column=5, padx=2, pady=2, sticky="ew")
+            label_frame.grid(row=row, column=6, padx=2, pady=2, sticky="ew")
             label_entry = ttk.Entry(
                 label_frame, 
                 textvariable=label_var, 
-                width=col_widths[5],
+                width=col_widths[6],
                 font=("맑은 고딕", 9)
             )
             label_entry.pack(fill="both", expand=True)
@@ -635,12 +678,12 @@ class ChannelSettingsUI:
                 font=("맑은 고딕", 8),
                 bg=row_bg,
                 anchor="w",
-                width=col_widths[6]
+                width=col_widths[7]
             )
-            init_label.grid(row=row, column=6, padx=2, pady=2, sticky="ew")
+            init_label.grid(row=row, column=7, padx=2, pady=2, sticky="ew")
             
             # 컬럼 가중치 설정
-            for col in range(7):
+            for col in range(8):
                 frame.columnconfigure(col, weight=0)
 
             # UI 변수 저장
@@ -648,6 +691,7 @@ class ChannelSettingsUI:
                 "mode": mode_var,
                 "base": base_var,
                 "scale": scale_var,
+                "post_offset": post_off_var,
                 "decimal": decimal_var,
                 "label": label_var,
             }
@@ -780,6 +824,7 @@ class ChannelSettingsUI:
                     ("mode",    "센서 동작 방식 선택 (아래 모드 목록 참조)"),
                     ("base",    "기준값 또는 참조 컬럼 인덱스 (모드에 따라 다름)"),
                     ("scale",   "랜덤 폭·배율·표준편차 등 (모드에 따라 다름). 일부 모드는 VW 입력 가능"),
+                    ("변환후+", "저장 키 post_offset. 모드·SET·PASS 등 계산된 채널 값 맨 마지막에 더할 상수. 레거시 「offset」(모드)과 무관"),
                     ("소수점",  "변환 결과 소수점 자리수 (예: 4 → 소수점 4자리)"),
                     ("센서명",  "출력 파일 헤더에 표시될 이름 (label)"),
                     ("초기치",  "이어쓰기 시 시작 기준값. 비어 있으면 base 또는 0 사용"),
@@ -811,7 +856,9 @@ class ChannelSettingsUI:
                     ("EL_TAEAM",  "TAEAM 경사계 가라 (정규분포)\n결과 = base + 정규분포(0, scale)\nbase = 중심값, scale = 표준편차 (기본 0.001)"),
                     ("EL_STATION","정거장 경사계 가라\n- 60%: ±0.0001 미세 노이즈\n- 30%: 0\n- 10%: ±0.0001~0.0003 스파이크\n+ 드문 누적 drift\nbase = 중심값"),
                     ("EL_TUNNEL", "터널 경사계 가라 (EL_STATION 동일 동작)"),
-                    ("CHANG_V",   "8번 열(0-based 인덱스 8, 0=A) 값 × scale\nscale에 배율: 0.2 → 0.2곱, 2 → 2곱, 비어 있으면 1\nbase 미사용"),
+                    ("CHANG_V",   "9번 열(0-based 인덱스 8, 0=A) 값 × scale\nscale에 배율: 0.2 → 0.2곱, 2 → 2곱, 비어 있으면 1\nbase 미사용"),
+                    ("CHANG_V2",  "8번 열(0-based 인덱스 7, 0=A) 값 참조\n|값| ≥ 0.01 이면 × scale, 미만이면 원값 그대로\n원본 0 → 약 90%는 0, 약 10%는 0.001/0.002\nscale에 배율: 0.2 → 0.2곱, 2 → 2곱, 비어 있으면 1\nbase 미사용"),
+                    ("DY_V",      "전압형 가라 (0.001 단위 이산)\n0.019~0.022 위주, 가끔 0.016·0.024, 행이 길면 약간 하강\nbase = 시작 중심값 (비우면 0.020)\n예) 0.021, 0.02, 0.022, 0.019 … 랜덤 반복\nscale 미사용"),
                     ("CHANG_SM",  "소음계 가라 (10분 간격 특성)\n평균 55.2 dB, 표준편차 6.1 dB 기반\n시간대별 야간↓ 출근·저녁↑\nbase = 평균값 (권장 55.2), scale = 표준편차 (권장 6.1)"),
                     ("CHANG_SM2", "0-based 8번 행(인덱스 8, 9번째 행)·해당 채널 열 셀값 × base\n→ 그 값을 열 전체에 동일 적용. base=0.98 → 0.98배, 비면 1\n데이터 9행 미만이면 NaN. scale 미사용"),
                     ("CR",        "균열계 가라 (누적 drift)\n5% 확률로 ±0.0001씩 누적 이동\nbase = 시작값"),
@@ -909,6 +956,7 @@ class ChannelSettingsUI:
         # 전역 옵션 저장
         new_cfg["__fill_interval__"] = int(self.fill_interval_var.get())
         new_cfg["__gen_interval__"] = int(self.gen_interval_var.get())
+        new_cfg["__align_60__"] = bool(self.align_60_var.get())
         
         # 로거 번호 저장
         logger_num_str = self.logger_number_var.get().strip()
@@ -934,9 +982,10 @@ class ChannelSettingsUI:
                 "mode": ui["mode"].get().strip(),
                 "base": ui["base"].get().strip(),
                 "scale": ui["scale"].get().strip(),
+                "post_offset": ui["post_offset"].get().strip(),
                 "decimal": ui["decimal"].get().strip(),
                 "label": ui["label"].get().strip(),
-                "initial": self.file_cfg[key].get("initial", "")
+                "initial": self.file_cfg[key].get("initial", ""),
             }
 
         try:

@@ -206,6 +206,8 @@ management.json.tmp
 
 # 계측관리 통합시스템 — measurement_portal/SurveyMgmtPortal 로컬 SQLite·비밀
 measurement_portal/SurveyMgmtPortal/data/
+measurement_portal/SurveyMgmtPortal/backups/
+measurement_portal/SurveyMgmtPortal/deploy/env.production.local.bat
 measurement_portal/SurveyMgmtPortal/portal.db
 measurement_portal/SurveyMgmtPortal/secrets.local.txt
 
@@ -215,3 +217,15 @@ measurement_portal/database/.env
 # 별도 git 저장소/실험 폴더 (중첩 clone 제외)
 File_converter/
 QMremote/
+
+# 테스트·참고·샘플 데이터 (레포에 포함하지 않음)
+3BAC/
+참고파일/
+test/
+survey_mgmt_portal/data/*.sqlite3
+
+# Pinegrow IDE 백업/메타
+**/_pgbackup/
+**/pinegrow.json
+monitoring/templates/pinegrow/
+monitoring/templates/_pginfo/

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>FTP 데이터 보기</title>
+</head>
+<body>
+    <h1>FTP 디렉토리: {{ directory }}</h1>
+    {% if is_error %}
+        <p style="color: red;">에러가 발생했습니다:</p>
+        <pre>{{ files[0] }}</pre>
+        <pre>{{ files[1] }}</pre>
+    {% else %}
+        <ul>
+            {% for file in files %}
+                <li>{{ file }}</li>
+            {% endfor %}
+    {% endif %}
+</body>
+</html>

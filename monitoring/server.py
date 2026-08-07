@@ -807,7 +807,10 @@ def api_tree():
                     if filename.startswith("__") or not isinstance(file_cfg, dict):
                         continue
                     is_ghost = is_ghost_folder or file_cfg.get("__is_ghost__", False)
-                    out_path = os.path.join(CONVERT_ROOT, company, folder, filename)
+                    from utils.convert_paths import resolve_convert_out_path
+                    out_path = resolve_convert_out_path(
+                        CONVERT_ROOT, company, site, folder, filename
+                    )
                     st = _file_status(out_path, is_ghost)
                     total += 1
                     s = st["status"]
@@ -907,14 +910,17 @@ def api_detail():
             break
 
     is_ghost = file_cfg.get("__is_ghost__", False)
-    out_path = os.path.join(CONVERT_ROOT, company, folder, filename)
+    from utils.convert_paths import resolve_convert_out_path
+    out_path = resolve_convert_out_path(
+        CONVERT_ROOT, company, site_found or "", folder, filename
+    )
     st = _file_status(out_path, is_ghost)
     channels = _parse_channels(file_cfg)
 
     # ── 차트/최신값: 캐시 우선, 없으면 CSV 직접 파싱 (초기 1회) ──
     try:
         from monitoring.data_cache import get_file_cache
-        cached = get_file_cache(company, folder, filename)
+        cached = get_file_cache(company, site_found or "", folder, filename)
     except Exception:
         cached = None
 
@@ -2001,6 +2007,14 @@ def _qm_init_local_db(conn: sqlite3.Connection) -> None:
           pc_id TEXT PRIMARY KEY,
           display_name TEXT NOT NULL DEFAULT ''
         );
+        CREATE TABLE IF NOT EXISTS qm_chat_message (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          server_name TEXT NOT NULL,
+          sender TEXT NOT NULL DEFAULT '',
+          kind TEXT NOT NULL DEFAULT 'chat',
+          message TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT ''
+        );
         """
     )
 
@@ -2128,6 +2142,74 @@ def _qm_local_set_note(server_name: str, note: str) -> None:
                 (sn, note),
             )
             c.commit()
+        finally:
+            c.close()
+
+
+def _qm_local_add_chat(server_name: str, sender: str, kind: str, message: str) -> dict:
+    sn = (server_name or "").strip()
+    if not sn:
+        return {}
+    k = str(kind or "chat").strip().lower()
+    if k not in ("chat", "disconnect_request"):
+        k = "chat"
+    msg = str(message or "").strip()[:2000]
+    if not msg:
+        return {}
+    who = str(sender or "").strip()[:200]
+    created_at = datetime.now().isoformat(timespec="seconds")
+    with _QM_DB_LOCK:
+        c = _qm_local_conn()
+        try:
+            cur = c.execute(
+                """INSERT INTO qm_chat_message(server_name,sender,kind,message,created_at)
+                   VALUES(?,?,?,?,?)""",
+                (sn, who, k, msg, created_at),
+            )
+            c.commit()
+            rid = int(cur.lastrowid or 0)
+            return {
+                "id": rid,
+                "server_name": sn,
+                "sender": who,
+                "kind": k,
+                "message": msg,
+                "created_at": created_at,
+            }
+        finally:
+            c.close()
+
+
+def _qm_local_fetch_chat(server_name: str, since_id: int, limit: int) -> list[dict]:
+    sn = (server_name or "").strip()
+    if not sn:
+        return []
+    sid = max(0, int(since_id or 0))
+    lim = max(1, min(200, int(limit or 50)))
+    with _QM_DB_LOCK:
+        c = _qm_local_conn()
+        try:
+            rows = c.execute(
+                """SELECT id, server_name, sender, kind, message, created_at
+                   FROM qm_chat_message
+                   WHERE server_name = ? AND id > ?
+                   ORDER BY id ASC
+                   LIMIT ?""",
+                (sn, sid, lim),
+            ).fetchall()
+            out = []
+            for row in rows:
+                out.append(
+                    {
+                        "id": int(row["id"] or 0),
+                        "server_name": str(row["server_name"] or ""),
+                        "sender": str(row["sender"] or ""),
+                        "kind": str(row["kind"] or "chat"),
+                        "message": str(row["message"] or ""),
+                        "created_at": str(row["created_at"] or ""),
+                    }
+                )
+            return out
         finally:
             c.close()
 
@@ -2569,6 +2651,60 @@ def api_qm_remote_note():
     _qm_local_set_note(server_name, note)
     _broadcast_dashboard_sse("qm_remote")
     return jsonify({"ok": True, "server_name": server_name, "note": note})
+
+
+@app.route("/api/qm-remote/chat/send", methods=["POST"])
+def api_qm_remote_chat_send():
+    data = request.get_json(force=True, silent=True) or {}
+    server_name = (data.get("server_name") or data.get("server") or "").strip()
+    message = str(data.get("message") or "").strip()[:2000]
+    kind = str(data.get("kind") or "chat").strip().lower()
+    if not server_name:
+        return jsonify({"ok": False, "error": "server_name이 필요합니다"}), 400
+    if not message:
+        return jsonify({"ok": False, "error": "message가 비어 있습니다"}), 400
+
+    cfg = _load_qm_remote_config()
+    allowed = {str(s).strip() for s in (cfg.get("servers") or []) if str(s).strip()}
+    if server_name != "__global__" and server_name not in allowed:
+        return jsonify({"ok": False, "error": "등록된 서버가 아닙니다"}), 400
+
+    timeout = float(cfg.get("request_timeout_sec") or 5)
+    pc_id = _qm_client_pc_id()
+    sender = _qm_session_effective_user(cfg, pc_id, timeout)
+    saved = _qm_local_add_chat(server_name, sender, kind, message)
+    if not saved:
+        return jsonify({"ok": False, "error": "채팅 저장 실패"}), 500
+    _broadcast_dashboard_sse("qm_remote_chat")
+    return jsonify({"ok": True, "message_row": saved})
+
+
+@app.route("/api/qm-remote/chat/fetch", methods=["GET"])
+def api_qm_remote_chat_fetch():
+    server_name = (request.args.get("server_name") or "").strip()
+    if not server_name:
+        return jsonify({"ok": False, "error": "server_name이 필요합니다"}), 400
+    cfg = _load_qm_remote_config()
+    allowed = {str(s).strip() for s in (cfg.get("servers") or []) if str(s).strip()}
+    if server_name != "__global__" and server_name not in allowed:
+        return jsonify({"ok": False, "error": "등록된 서버가 아닙니다"}), 400
+    try:
+        since_id = int(request.args.get("since_id") or "0")
+    except ValueError:
+        since_id = 0
+    try:
+        limit = int(request.args.get("limit") or "50")
+    except ValueError:
+        limit = 50
+    rows = _qm_local_fetch_chat(server_name, since_id, limit)
+    return jsonify(
+        {
+            "ok": True,
+            "server_name": server_name,
+            "since_id": max(0, since_id),
+            "messages": rows,
+        }
+    )
 
 
 # ─────────────────────────────────────────

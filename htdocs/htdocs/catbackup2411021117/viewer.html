@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viewer</title>
+    <script>
+        async function loadLineNumbers() {
+            const response = await fetch('/cat/temporary/');
+            const files = await response.text();
+            const lineNumbers = files.match(/(\d+)_temp\.txt/g); // 정규 표현식을 사용하여 파일 목록 추출
+            const dropDown = document.getElementById('lineNumberSelect');
+            if (lineNumbers) {
+                lineNumbers.forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = file;
+                    option.textContent = file.replace('_temp.txt', '');
+                    dropDown.appendChild(option);
+                });
+            }
+        }
+
+        async function fetchData() {
+            const selectedLineNumber = document.getElementById('lineNumberSelect').value;
+            const response = await fetch(`/cat/temporary/${selectedLineNumber}`);
+            const data = await response.json();
+            document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+        }
+
+        window.onload = loadLineNumbers;
+    </script>
+</head>
+<body>
+    <h1>라인 넘버 선택</h1>
+    <select id="lineNumberSelect" onchange="fetchData()">
+        <option value="">라인 넘버 선택</option>
+    </select>
+    <pre id="output"></pre>
+</body>
+</html>

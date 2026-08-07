@@ -39,12 +39,15 @@ class MainUI:
 
     DEFAULT_COMPANIES = ["SAEGIL", "KD_ENG", "TAEAM", "DooYoung_Safe", "KIC"]
     ALL_COMPANIES_OPTION = "전체 업체"
+    ALL_SITES_OPTION = "전체 현장"
 
     def __init__(self, root, app):
         self.root = root
         self.app = app               # controller → app (핵심 변경)
         self.logger = app.logger
         self.current_company = ""
+        self.current_site = self.ALL_SITES_OPTION
+        self._search_after_id = None
 
         self._build_ui()
 
@@ -131,11 +134,37 @@ class MainUI:
         self.company_combo.pack(side="left", padx=5)
         self.company_combo.bind("<<ComboboxSelected>>", self._on_company_change)
 
+        tk.Label(
+            top_controls,
+            text="현장:",
+            font=("맑은 고딕", 9, "bold"),
+            bg="#2C3E50",
+            fg="white",
+        ).pack(side="left", padx=(10, 5))
+
+        self.site_var = tk.StringVar(value=self.ALL_SITES_OPTION)
+        self.site_combo = ttk.Combobox(
+            top_controls,
+            textvariable=self.site_var,
+            state="readonly",
+            width=18,
+            font=("맑은 고딕", 9),
+        )
+        self.site_combo.pack(side="left", padx=5)
+        self.site_combo.bind("<<ComboboxSelected>>", self._on_site_change)
+
         ttk.Button(
             top_controls, 
             text="새로고침", 
             command=self._refresh_with_ghost_check,
             width=12
+        ).pack(side="left", padx=5)
+
+        ttk.Button(
+            top_controls,
+            text="Ghost 정리",
+            command=self._cleanup_ghost_folders,
+            width=10,
         ).pack(side="left", padx=5)
 
         # ------------------------------ 중앙: TreeView ------------------------------
@@ -145,6 +174,28 @@ class MainUI:
         # TreeView 프레임 (스크롤바 포함)
         tree_frame = tk.Frame(center, bg="white")
         tree_frame.pack(fill="both", expand=True)
+
+        search_frame = tk.Frame(tree_frame, bg="white")
+        search_frame.pack(fill="x", pady=(0, 6))
+        tk.Label(
+            search_frame,
+            text="파일 검색:",
+            font=("맑은 고딕", 9),
+            bg="white",
+            fg="#2C3E50",
+        ).pack(side="left", padx=(0, 6))
+        self.file_search_var = tk.StringVar()
+        self.file_search_entry = ttk.Entry(
+            search_frame, textvariable=self.file_search_var, width=28
+        )
+        self.file_search_entry.pack(side="left", padx=(0, 6))
+        self.file_search_var.trace_add("write", self._on_file_search_changed)
+        ttk.Button(
+            search_frame,
+            text="지우기",
+            command=self._clear_file_search,
+            width=6,
+        ).pack(side="left")
         
         # 스크롤바
         tree_scrollbar = ttk.Scrollbar(tree_frame, orient="vertical")
@@ -362,6 +413,25 @@ class MainUI:
         )
         add_folder_btn.pack(side="left", padx=3)
         self.buttons.append(add_folder_btn)
+
+        nb_add_btn = tk.Button(
+            right_buttons,
+            text="NB추가",
+            command=self._register_nb_files,
+            font=("맑은 고딕", 8),
+            bg="#8E44AD",
+            fg="white",
+            activebackground="#7D3C98",
+            activeforeground="white",
+            relief="flat",
+            width=8,
+            height=1,
+            padx=8,
+            pady=4,
+            cursor="hand2",
+        )
+        nb_add_btn.pack(side="left", padx=3)
+        self.buttons.append(nb_add_btn)
         
         # 미등록 파일 관리 버튼
         unreg_files_btn = tk.Button(
@@ -540,13 +610,25 @@ class MainUI:
         # 사용자 친화적으로 변환
         if "초기화 완료" in text or "초기화" in text:
             return "프로그램이 준비되었습니다."
-        
+
+        # 파일 단위 결과 (변환 / 누락보충 / 문제 스킵)
+        if text.startswith("변환:") or text.startswith("누락보충:"):
+            return text if len(text) <= 120 else text[:117] + "..."
+        if text.startswith("건너뜀("):
+            return text if len(text) <= 120 else text[:117] + "..."
+
         if "변환 시작" in text or "변환 작업이 진행 중" in text:
+            # "Convert Pro 3 변환 시작 (파일 N개)" 유지
+            if "파일" in text and "개" in text:
+                return text
             return "변환 작업을 시작합니다..."
-        
+
+        if text.startswith("변환 완료") or text.startswith("변환 중지") or "폴더 변환 완료" in text:
+            return text if len(text) <= 120 else text[:117] + "..."
+
         if "변환 완료" in text or "변환 종료" in text:
             return "변환 작업이 완료되었습니다."
-        
+
         if "업체 추가" in text:
             match = re.search(r'→\s*(\w+)', text)
             if match:
@@ -661,9 +743,12 @@ class MainUI:
                 return "작업 중 오류가 발생했습니다. (로그: logs/app.log)"
             return "오류가 발생했습니다. (로그: logs/app.log)"
         
-        if "경고" in text or "WARN" in text:
-            return None  # 경고는 표시하지 않음
-        
+        if "경고" in text or "[WARN]" in log_text:
+            # 문제성 스킵은 표시 (정상 경고 노이즈는 숨김)
+            if text.startswith("건너뜀("):
+                return text if len(text) <= 120 else text[:117] + "..."
+            return None  # 그 외 경고는 표시하지 않음
+
         # DEBUG 레벨은 표시하지 않음
         if "DEBUG" in text or "debug" in text.lower():
             return None
@@ -702,30 +787,126 @@ class MainUI:
             self.current_company = self.ALL_COMPANIES_OPTION
 
         self.company_var.set(self.current_company)
+        self.refresh_site_list()
+
+    def refresh_site_list(self):
+        """선택 업체의 현장 목록 갱신."""
+        if not self.current_company or self.current_company == self.ALL_COMPANIES_OPTION:
+            self.site_combo["values"] = [self.ALL_SITES_OPTION]
+            self.current_site = self.ALL_SITES_OPTION
+            self.site_var.set(self.current_site)
+            self.site_combo.config(state="disabled")
+            return
+
+        self.site_combo.config(state="readonly")
+        company_dict = self.app.tree.get_company_data(self.current_company)
+        if not isinstance(company_dict, dict):
+            sites = []
+        else:
+            sites = sorted(
+                k for k in company_dict
+                if not k.startswith("__") and isinstance(company_dict[k], dict)
+            )
+        site_list = [self.ALL_SITES_OPTION] + sites
+        self.site_combo["values"] = site_list
+        if self.current_site not in site_list:
+            self.current_site = self.ALL_SITES_OPTION
+        self.site_var.set(self.current_site)
+
+    def _site_filter_active(self):
+        return (
+            self.current_company
+            and self.current_company != self.ALL_COMPANIES_OPTION
+            and self.current_site
+            and self.current_site != self.ALL_SITES_OPTION
+        )
+
+    def _on_file_search_changed(self, *_args):
+        if self._search_after_id:
+            self.root.after_cancel(self._search_after_id)
+        self._search_after_id = self.root.after(250, self._apply_tree_filter)
+
+    def _clear_file_search(self):
+        self.file_search_var.set("")
+
+    def _apply_tree_filter(self):
+        """파일명 검색 — 매칭되지 않는 노드 숨김 (트리 재구성 없이 detach)."""
+        self._search_after_id = None
+        query = (self.file_search_var.get() or "").strip().lower()
+        if not query:
+            self.refresh_tree()
+            return
+
+        def walk(item):
+            for child in list(self.tree.get_children(item)):
+                walk(child)
+            node_type = self.tree.set(item, "type") or ""
+            filename = (self.tree.set(item, "filename") or "").lower()
+            label = (self.tree.item(item, "text") or "").lower()
+            if node_type == "file":
+                if query not in filename and query not in label:
+                    self.tree.detach(item)
+            elif node_type == "summary":
+                self.tree.detach(item)
+            elif not self.tree.get_children(item):
+                self.tree.detach(item)
+
+        for root in list(self.tree.get_children()):
+            walk(root)
+            if not self.tree.get_children(root):
+                self.tree.detach(root)
+
+        visible_files = sum(
+            1
+            for item in self._iter_tree_items()
+            if (self.tree.set(item, "type") or "") == "file"
+        )
+        self.status_label.config(
+            text=f"검색 '{query}' — {visible_files}개 파일 표시",
+            fg="#2C3E50",
+        )
+
+    def _iter_tree_items(self, parent=""):
+        for item in self.tree.get_children(parent):
+            yield item
+            yield from self._iter_tree_items(item)
+
+    def find_file_node(self, company, site, folder, filename, parent=""):
+        """트리에서 파일 노드 검색 (카테고리·전체 업체 모드 포함)."""
+        for item in self.tree.get_children(parent):
+            node_type = self.tree.set(item, "type") or ""
+            if node_type == "file":
+                if (
+                    self.tree.set(item, "company") == company
+                    and self.tree.set(item, "site") == site
+                    and self.tree.set(item, "folder") == folder
+                    and self.tree.set(item, "filename") == filename
+                ):
+                    return item
+            found = self.find_file_node(company, site, folder, filename, item)
+            if found:
+                return found
+        return None
+
+    def refresh_file_nodes(self, targets):
+        """변환/trim 후 배터리 등 파일 노드만 갱신 (전체 refresh_tree 생략)."""
+        for company, site, folder, filename in targets:
+            key = (company, site, folder, filename)
+            cached = self.app.battery_cache.get(key)
+            if cached is not None:
+                self.update_battery(
+                    company, site, folder, filename,
+                    self.app.format_battery(cached),
+                )
 
     # ======================================================
     # 업데이트 배터리
     # ======================================================
     def update_battery(self, company, site, folder, filename, value):
         """배터리 값 업데이트 (Site 레벨 포함)"""
-        # 모든 현장 노드 탐색
-        for site_id in self.tree.get_children():
-            if self.tree.set(site_id, "company") != company:
-                continue
-            if self.tree.set(site_id, "site") != site:
-                continue
-            
-            # 현장 안에서 폴더 찾기
-            for folder_id in self.tree.get_children(site_id):
-                if self.tree.set(folder_id, "folder") != folder:
-                    continue
-
-            # 해당 폴더 안에서 파일 찾기
-            for file_id in self.tree.get_children(folder_id):
-                if self.tree.set(file_id, "filename") == filename:
-                    # 배터리 값 갱신
-                    self.tree.set(file_id, "battery", str(value))
-                    return
+        file_id = self.find_file_node(company, site, folder, filename)
+        if file_id:
+            self.tree.set(file_id, "battery", str(value))
 
     # ======================================================
     # 트리뷰 갱신 (Ghost 체크 포함)
@@ -743,6 +924,50 @@ class MainUI:
         
         self.refresh_tree()
     
+    def _cleanup_ghost_folders(self):
+        """경로 유실(Ghost) 폴더를 config에서 일괄 삭제."""
+        from tkinter import messagebox
+
+        self.app.config.check_path_validity()
+        ghost_folders = []
+        for company, sites in self.app.config.data.items():
+            if company.startswith("__") or not isinstance(sites, dict):
+                continue
+            for site_name, site_data in sites.items():
+                if site_name.startswith("__") or not isinstance(site_data, dict):
+                    continue
+                for folder_name, folder_data in site_data.items():
+                    if folder_name.startswith("__") or not isinstance(folder_data, dict):
+                        continue
+                    if folder_data.get("__is_ghost__"):
+                        ghost_folders.append(f"{company}/{site_name}/{folder_name}")
+
+        if not ghost_folders:
+            messagebox.showinfo("Ghost 정리", "삭제할 Ghost 폴더가 없습니다.", parent=self.root)
+            return
+
+        preview = "\n".join(f"  · {x}" for x in ghost_folders[:20])
+        if len(ghost_folders) > 20:
+            preview += f"\n  ... 외 {len(ghost_folders) - 20}개"
+
+        if not messagebox.askyesno(
+            "Ghost 정리",
+            f"경로가 없는 Ghost 폴더 {len(ghost_folders)}개를 config에서 삭제합니다.\n\n"
+            f"{preview}\n\n"
+            "실제 CSV 파일은 삭제되지 않습니다. 계속할까요?",
+            parent=self.root,
+        ):
+            return
+
+        removed = self.app.config.remove_ghost_folders()
+        self.app.logger.log(f"[UI] Ghost 정리 완료: {len(removed)}개 항목", level="INFO")
+        messagebox.showinfo(
+            "Ghost 정리",
+            f"{len(removed)}개 항목을 config에서 제거했습니다.",
+            parent=self.root,
+        )
+        self.refresh_tree()
+
     # ======================================================
     # 트리뷰 갱신 (4단계 구조: 업체 → 현장 → 폴더 → 파일)
     # ======================================================
@@ -816,12 +1041,17 @@ class MainUI:
         for site_name, site_data in company_dict.items():
             if site_name.startswith("__") or not isinstance(site_data, dict):
                 continue
+            if self._site_filter_active() and site_name != self.current_site:
+                continue
 
             site_note = site_data.get("__note__", "")
             is_ghost_site = site_data.get("__is_ghost__", False)
+            tb_site = site_data.get("__time_block_future__", False)
 
             # ------------------------------ 현장 노드 ------------------------------
             site_text = f"[Ghost] {site_name}" if is_ghost_site else site_name
+            if tb_site:
+                site_text = f"{site_text} ·시간차단"
             # 현장은 진하게 표시
             site_tags = ["site_bold"]
             if is_ghost_site:
@@ -854,40 +1084,41 @@ class MainUI:
                 [g for g in site_mgmt.get("station_groups", []) if isinstance(g, dict)]
             )
 
-            if has_categories:
-                # ── 카테고리 있음: 폴더 레벨 없이 현장 바로 아래 ──
-                all_files = []  # (folder_name, sort_key, filename, file_cfg)
-                for folder_name, folder_data in site_data.items():
-                    if folder_name.startswith("__") or not isinstance(folder_data, dict):
-                        continue
-                    for sort_key, filename, file_cfg in self._build_files_list(folder_data):
-                        all_files.append((folder_name, sort_key, filename, file_cfg))
-                all_files.sort(key=lambda x: (x[1], x[0], x[2]))
-                self._insert_files_by_category(site_id, company, site_name, site_mgmt, all_files)
-            else:
-                # ── 카테고리 없음: 기존 폴더 구조 유지 ──
-                for folder_name, folder_data in site_data.items():
-                    if folder_name.startswith("__") or not isinstance(folder_data, dict):
-                        continue
+            use_folder_flat = self._site_filter_active()
 
-                    folder_note = folder_data.get("__note__", "")
-                    is_ghost_folder = folder_data.get("__is_ghost__", False)
+            # 폴더 노드는 항상 표시 (카테고리 모드에서도 현장명에 폴더를 흡수하지 않음)
+            for folder_name, folder_data in site_data.items():
+                if folder_name.startswith("__") or not isinstance(folder_data, dict):
+                    continue
 
-                    folder_text = f"[Ghost] {folder_name}" if is_ghost_folder else folder_name
-                    folder_tags = ["folder_normal"]
-                    if is_ghost_folder:
-                        folder_tags.append("ghost")
+                folder_note = folder_data.get("__note__", "")
+                is_ghost_folder = folder_data.get("__is_ghost__", False)
 
-                    folder_id = self.tree.insert(
-                        site_id, "end",
-                        text=folder_text,
-                        values=(folder_note, "", "folder", company, site_name, folder_name, "", str(is_ghost_folder)),
-                        tags=tuple(folder_tags)
+                folder_text = f"[Ghost] {folder_name}" if is_ghost_folder else folder_name
+                folder_tags = ["folder_normal"]
+                if is_ghost_folder:
+                    folder_tags.append("ghost")
+
+                folder_id = self.tree.insert(
+                    site_id, "end",
+                    text=folder_text,
+                    values=(folder_note, "", "folder", company, site_name, folder_name, "", str(is_ghost_folder)),
+                    tags=tuple(folder_tags)
+                )
+
+                files_list = self._build_files_list(folder_data)
+                if has_categories and not use_folder_flat:
+                    folder_files = [
+                        (folder_name, sort_key, filename, file_cfg)
+                        for sort_key, filename, file_cfg in files_list
+                    ]
+                    self._insert_files_by_category(
+                        folder_id, company, site_name, site_mgmt, folder_files
                     )
-
-                    files_list = self._build_files_list(folder_data)
+                else:
                     self._insert_folder_files(
-                        folder_id, company, site_name, site_mgmt, folder_name, files_list
+                        folder_id, company, site_name, site_mgmt, folder_name, files_list,
+                        flat=use_folder_flat,
                     )
 
         # 기본 태그 스타일
@@ -902,9 +1133,9 @@ class MainUI:
         self.tree.tag_configure("cat_unassigned", font=("맑은 고딕", 9, "italic"),foreground="#9ca3af")
         self.tree.tag_configure("file_unassigned",foreground="#9ca3af")
 
-        # 자동 확장 (재귀: 카테고리 계층 포함 모든 레벨 확장)
+        # 현장·폴더만 펼침 (파일/summary 전체 자동 펼침은 노드 폭증)
         def _expand(item, depth=0):
-            if depth > 10:
+            if depth > 2:
                 return
             self.tree.item(item, open=True)
             for child in self.tree.get_children(item):
@@ -912,6 +1143,9 @@ class MainUI:
 
         for item in self.tree.get_children():
             _expand(item)
+
+        if (self.file_search_var.get() or "").strip():
+            self._apply_tree_filter()
 
     # ======================================================
     # 트리 파일 목록 헬퍼 (카테고리 그룹화)
@@ -996,8 +1230,7 @@ class MainUI:
                     by_cat[grp_key][st_key] = []
 
     def _insert_files_by_category(self, parent_id, company, site_name, site_mgmt, all_files):
-        """카테고리가 설정된 현장: 폴더 레벨 없이 parent_id 바로 아래에
-        대분류 → 소분류 → 파일 구조로 삽입.
+        """카테고리(대분류→소분류→파일)로 삽입. parent_id는 보통 폴더 노드.
         all_files: [(folder_name, sort_key, filename, file_cfg), ...]
         """
         station_groups = [g for g in site_mgmt.get("station_groups", []) if isinstance(g, dict)]
@@ -1070,15 +1303,16 @@ class MainUI:
                     ung_node, company, site_name, folder_name, filename, file_cfg, registered=False
                 )
 
-    def _insert_folder_files(self, folder_id, company, site_name, site_mgmt, folder_name, files_list):
+    def _insert_folder_files(self, folder_id, company, site_name, site_mgmt, folder_name, files_list,
+                             flat=False):
         """
         파일을 카테고리(대분류→소분류) 기준으로 그룹화하여 트리에 삽입.
-        현장에 소분류(station)가 없으면 기존 flat 방식으로 표시.
+        flat=True 이면 폴더 바로 아래에 파일만 표시 (현장 1개 필터용).
 
         site_mgmt: management.json의 현장 관리 데이터 dict (없으면 빈 dict)
         """
         stations = [s for s in site_mgmt.get("stations", []) if isinstance(s, dict)]
-        if not stations:
+        if flat or not stations:
             # 소분류 없음 → 기존 flat 방식
             for _k, filename, file_cfg in files_list:
                 self._insert_file_node(folder_id, company, site_name, folder_name, filename, file_cfg)
@@ -1162,11 +1396,18 @@ class MainUI:
                           registered=None):
         """단일 파일 노드를 트리에 삽입 (채널 summary 포함)"""
         label_summary  = self.app.tree.get_file_label_summary(company, site_name, folder_name, filename)
-        battery_value  = self.app.battery_cache.get((company, site_name, folder_name, filename), "")
+        cached_batt = self.app.battery_cache.get((company, site_name, folder_name, filename))
+        battery_value = (
+            self.app.format_battery(cached_batt)
+            if cached_batt is not None
+            else "0.00 %"
+        )
         file_note      = file_cfg.get("__note__", "")
         is_ghost_file  = file_cfg.get("__is_ghost__", False)
 
         file_text = f"[Ghost] {filename}" if is_ghost_file else filename
+        if file_cfg.get("__align_60__") and not filename.endswith("_60.csv"):
+            file_text = f"{file_text}  [60]"
         file_tags = ["file_normal"]
         if is_ghost_file:
             file_tags.append("ghost")
@@ -1230,6 +1471,11 @@ class MainUI:
             )
 
         self.company_combo.config(state="readonly" if enabled else "disabled")
+        if hasattr(self, "site_combo"):
+            if enabled and self.current_company != self.ALL_COMPANIES_OPTION:
+                self.site_combo.config(state="readonly")
+            else:
+                self.site_combo.config(state="disabled")
 
         if enabled:
             self.status_label.config(text="준비 완료", fg="#27AE60")
@@ -1245,6 +1491,12 @@ class MainUI:
     def _on_company_change(self, event=None):
         self.current_company = self.company_var.get()
         self.app.logger.log(f"[UI] 업체 변경: {self.current_company}")
+        self.refresh_site_list()
+        self.refresh_tree()
+
+    def _on_site_change(self, event=None):
+        self.current_site = self.site_var.get()
+        self.app.logger.log(f"[UI] 현장 변경: {self.current_site}")
         self.refresh_tree()
 
     def _on_tree_double_click(self, event=None):
@@ -1643,6 +1895,54 @@ class MainUI:
         
         self.app.logger.log(f"[UI] 로거파일 등록 시작: {folder_path}")
 
+    def _register_nb_files(self):
+        """Neo Blast (.blast/.txt) 폴더 등록 → 마스터 CSV 생성"""
+        from core.neo_blast_processor import list_neo_blast_source_files
+
+        folder_path = filedialog.askdirectory(title="Neo Blast 로그 폴더 선택 (.blast / .txt)")
+        if not folder_path:
+            return
+
+        sources = list_neo_blast_source_files(folder_path)
+        if not sources:
+            messagebox.showwarning(
+                "안내",
+                "선택한 폴더에 .blast 또는 .txt 파일이 없습니다.",
+                parent=self.root,
+            )
+            return
+
+        company = self._popup_select_company()
+        if not company:
+            return
+
+        site = self._popup_select_site(company)
+        if not site:
+            return
+
+        folder_name = os.path.basename(folder_path.rstrip("/\\"))
+        if not messagebox.askyesno(
+            "NB 등록 확인",
+            f"Neo Blast 로거를 등록합니다.\n\n"
+            f"업체: {company}\n"
+            f"현장: {site}\n"
+            f"폴더: {folder_name}\n"
+            f"원본 파일: {len(sources)}개\n\n"
+            f"마스터 CSV는 Convert 폴더에 생성됩니다.\n"
+            f"(START_TIME·END_TIME·VelPeak… 7열, 시간=기존 변환본 timestamp 형식)\n"
+            f"이후 변환 시 새 End 시각만 추가됩니다.",
+            parent=self.root,
+        ):
+            return
+
+        ok, msg = self.app.register_nb_folder(folder_path, company, site)
+        if ok:
+            messagebox.showinfo("NB 등록 완료", msg, parent=self.root)
+            self.refresh_tree()
+            self.app.logger.log(f"[UI] NB 등록 완료: {folder_path}")
+        else:
+            messagebox.showerror("NB 등록 실패", msg, parent=self.root)
+
     # ======================================================
     # 현장 추가
     # ======================================================
@@ -1801,7 +2101,7 @@ class MainUI:
         tk.Label(
             dlg,
             text="프로그램 업데이트: GitHub에서 새 EXE 버전 확인\n"
-                 "웹 패치: server.py · 화면(HTML) 소스 최신화",
+                 "웹 패치: 개발 PC push → 서버에서 git pull 후 monitoring 반영",
             font=("맑은 고딕", 9),
             fg="#666",
             justify="center"
@@ -1886,98 +2186,22 @@ class MainUI:
         threading.Thread(target=check_thread, daemon=True).start()
 
     def _start_web_patch(self):
-        """웹 패치 — 로컬 폴더 동기화 또는 GitHub ZIP (자동 git pull 없음)."""
-        dlg = tk.Toplevel(self.root)
-        dlg.title("웹 패치")
-        dlg.geometry("400x200")
-        dlg.resizable(False, False)
-        dlg.transient(self.root)
-        dlg.grab_set()
-        self._center_popup_on_parent(dlg)
-
-        tk.Label(
-            dlg,
-            text="방법을 선택하세요",
-            font=("맑은 고딕", 11, "bold"),
-            fg="#2C3E50",
-        ).pack(pady=(18, 6))
-
-        tk.Label(
-            dlg,
-            text="· 로컬: 프로젝트 폴더의 monitoring/ 을 그대로 실행 경로로 복사\n"
-                 "· ZIP: 원격 저장소 패키지로 받기 (git 불필요)\n\n"
-                 "두 방식 모두 자동 git pull 은 하지 않습니다.",
-            font=("맑은 고딕", 9),
-            fg="#555",
-            justify="left",
-        ).pack(pady=(0, 14))
-
-        btn_row = tk.Frame(dlg)
-        btn_row.pack()
-
-        def choose_folder():
-            dlg.destroy()
-            self._start_web_patch_folder()
-
-        def choose_zip():
-            dlg.destroy()
-            self._start_web_patch_zip()
-
-        tk.Button(
-            btn_row,
-            text="로컬 폴더에서 복사",
-            command=choose_folder,
-            font=("맑은 고딕", 10, "bold"),
-            bg="#2980B9",
-            fg="white",
-            relief="flat",
-            padx=12,
-            pady=8,
-            cursor="hand2",
-        ).pack(side="left", padx=4)
-
-        tk.Button(
-            btn_row,
-            text="GitHub ZIP",
-            command=choose_zip,
-            font=("맑은 고딕", 10),
-            bg="#ecf0f1",
-            fg="#34495e",
-            relief="flat",
-            padx=12,
-            pady=8,
-            cursor="hand2",
-        ).pack(side="left", padx=4)
-
-        tk.Button(
-            dlg,
-            text="취소",
-            command=dlg.destroy,
-            font=("맑은 고딕", 9),
-            fg="#666",
-            relief="flat",
-            pady=(10, 0),
-        ).pack()
-
-    def _start_web_patch_folder(self):
-        """웹 패치 — monitoring/ 디렉터리 비교·복사만 수행."""
+        """웹 패치 — git pull 후 monitoring/ 을 실행 폴더로 복사."""
         import threading
 
-        # 저장소 경로 확인
         repo_path = self.app.config.get_web_patch_repo_path()
         if not repo_path:
             repo_path = filedialog.askdirectory(
-                title="프로젝트 루트 선택 (Convert_pro3 폴더 — 그 안의 monitoring/ 이 복사됩니다)",
+                title="git clone 한 Convert_pro3 폴더 선택 (그 안의 monitoring/ 이 복사됩니다)",
                 parent=self.root,
             )
             if not repo_path:
                 return
             self.app.config.set_web_patch_repo_path(repo_path)
 
-        # 진행 다이얼로그
         dlg = tk.Toplevel(self.root)
         dlg.title("웹 패치")
-        dlg.geometry("380x160")
+        dlg.geometry("400x170")
         dlg.resizable(False, False)
         dlg.transient(self.root)
         dlg.grab_set()
@@ -1986,15 +2210,19 @@ class MainUI:
         header = tk.Frame(dlg, bg="#2980B9", height=50)
         header.pack(fill="x")
         header.pack_propagate(False)
-        tk.Label(header, text="웹 파일 최신화 중...",
-                 font=("맑은 고딕", 11, "bold"), bg="#2980B9", fg="white").pack(pady=12)
+        tk.Label(
+            header,
+            text="웹 패치 (git pull → 복사)",
+            font=("맑은 고딕", 11, "bold"),
+            bg="#2980B9",
+            fg="white",
+        ).pack(pady=12)
 
-        status_var = tk.StringVar(value="monitoring 폴더 확인 중...")
-        tk.Label(dlg, textvariable=status_var,
-                 font=("맑은 고딕", 9), fg="#444").pack(pady=10)
+        status_var = tk.StringVar(value="저장소에서 git pull 중...")
+        tk.Label(dlg, textvariable=status_var, font=("맑은 고딕", 9), fg="#444").pack(pady=10)
 
         from tkinter import ttk
-        prog = ttk.Progressbar(dlg, mode='indeterminate', length=320)
+        prog = ttk.Progressbar(dlg, mode='indeterminate', length=340)
         prog.pack(pady=4)
         prog.start(10)
 
@@ -2002,7 +2230,7 @@ class MainUI:
             try:
                 result = self.app.do_web_patch(
                     repo_path,
-                    status_cb=lambda msg: dlg.after(0, lambda m=msg: status_var.set(m))
+                    status_cb=lambda msg: dlg.after(0, lambda m=msg: status_var.set(m)),
                 )
                 dlg.after(0, lambda: _finish(result))
             except Exception as e:
@@ -2019,7 +2247,7 @@ class MainUI:
                     "server.py 가 변경되었습니다.\n"
                     "[웹 재시작] 버튼을 눌러 반영하세요.\n\n"
                     "templates/ 변경은 브라우저 새로고침으로 즉시 반영됩니다.",
-                    parent=self.root
+                    parent=self.root,
                 )
             elif result.get('template_changed'):
                 messagebox.showinfo(
@@ -2027,15 +2255,20 @@ class MainUI:
                     "패치 완료!\n\n"
                     "templates/ 가 변경되었습니다.\n"
                     "브라우저를 새로고침하면 즉시 반영됩니다.",
-                    parent=self.root
+                    parent=self.root,
                 )
             elif result.get('no_change'):
+                pulled = result.get('pulled')
+                extra = (
+                    "원격에서 새 커밋을 받았지만 monitoring 은 실행 폴더와 동일합니다."
+                    if pulled
+                    else "저장소·실행 폴더 monitoring 모두 최신(동일)입니다."
+                )
                 messagebox.showinfo(
                     "웹 패치",
-                    "선택한 폴더의 monitoring 과 실행 폴더 내용이 동일합니다.\n\n"
-                    "다른 버전으로 맞추려면 해당 폴더에서 미리 새 파일을 놓거나,\n"
-                    "GitHub ZIP 웹 패치 흐름을 사용하세요.\n\n"
-                    "브라우저가 옛 화면이면 Ctrl+F5 로 강력 새로고침 해 보세요.",
+                    f"{extra}\n\n"
+                    "개발 PC에서 push 후 다시 패치하세요.\n"
+                    "화면이 옛것이면 Ctrl+F5 강력 새로고침을 해 보세요.",
                     parent=self.root,
                 )
             else:
@@ -2047,75 +2280,11 @@ class MainUI:
             messagebox.showerror(
                 "웹 패치 실패",
                 f"오류가 발생했습니다.\n\n{err}\n\n"
-                "프로젝트 루트에 monitoring 폴더가 있는지 경로를 확인하세요.",
-                parent=self.root
+                "· 서버 PC에 Git 설치 + PATH\n"
+                "· web 패치 경로 = git clone 한 Convert_pro3 루트\n"
+                "· 원격 pull 권한(인증) 확인",
+                parent=self.root,
             )
-
-        threading.Thread(target=patch_thread, daemon=True).start()
-
-    def _start_web_patch_zip(self):
-        """웹 패치 — git 없이 GitHub ZIP 다운로드로 monitoring/ 최신화"""
-        import threading
-
-        dlg = tk.Toplevel(self.root)
-        dlg.title("웹 패치 (ZIP)")
-        dlg.geometry("400x180")
-        dlg.resizable(False, False)
-        dlg.transient(self.root)
-        dlg.grab_set()
-        self._center_popup_on_parent(dlg)
-
-        header = tk.Frame(dlg, bg="#27AE60", height=50)
-        header.pack(fill="x")
-        header.pack_propagate(False)
-        tk.Label(header, text="웹 파일 최신화 중... (ZIP)",
-                 font=("맑은 고딕", 11, "bold"), bg="#27AE60", fg="white").pack(pady=12)
-
-        status_var = tk.StringVar(value="GitHub에서 최신 파일 다운로드 중...")
-        tk.Label(dlg, textvariable=status_var,
-                 font=("맑은 고딕", 9), fg="#444").pack(pady=10)
-
-        from tkinter import ttk
-        prog = ttk.Progressbar(dlg, mode='indeterminate', length=340)
-        prog.pack(pady=4)
-        prog.start(10)
-
-        def patch_thread():
-            try:
-                result = self.app.do_web_patch_zip(
-                    status_cb=lambda msg: dlg.after(0, lambda m=msg: status_var.set(m))
-                )
-                dlg.after(0, lambda: _finish(result))
-            except Exception as e:
-                dlg.after(0, lambda err=str(e): _error(err))
-
-        def _finish(result):
-            prog.stop()
-            dlg.destroy()
-            if result.get('server_changed'):
-                self.show_web_restart_banner()
-                messagebox.showinfo("웹 패치 완료",
-                    "패치 완료!\n\nserver.py가 변경되었습니다.\n"
-                    "[웹 재시작] 버튼을 눌러 반영하세요.", parent=self.root)
-            elif result.get('template_changed'):
-                messagebox.showinfo("웹 패치 완료",
-                    "패치 완료!\n\ntemplates/가 변경되었습니다.\n"
-                    "브라우저를 새로고침하면 즉시 반영됩니다.", parent=self.root)
-            elif result.get('no_change'):
-                messagebox.showinfo(
-                    "웹 패치",
-                    "저장소는 최신이고 실행 폴더 monitoring 도 동일합니다.\n\n"
-                    "화면이 옛날이면 다른 경로의 EXE 를 쓰는지, 브라우저 새로고침(Ctrl+F5)을 해 보세요.",
-                    parent=self.root,
-                )
-            else:
-                messagebox.showinfo("웹 패치 완료", "패치가 완료되었습니다.", parent=self.root)
-
-        def _error(err):
-            prog.stop()
-            dlg.destroy()
-            messagebox.showerror("웹 패치 실패",
-                f"오류가 발생했습니다.\n\n{err}", parent=self.root)
 
         threading.Thread(target=patch_thread, daemon=True).start()
 

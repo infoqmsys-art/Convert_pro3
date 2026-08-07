@@ -13,17 +13,19 @@
                     "__gen_interval__": 0,
                     "__is_ghost__": false,
                     "CH0": {
-                        "offset": "PASS",
+                        "mode": "PASS",
                         "base": "",
                         "scale": "",
+                        "post_offset": "",
                         "decimal": "",
                         "label": "",
                         "initial": ""
                     },
                     "CH1": {
-                        "offset": "0",
+                        "mode": "OFFSET",
                         "base": "0",
                         "scale": "1.0",
+                        "post_offset": "",
                         "decimal": "2",
                         "label": "센서 레이블",
                         "initial": ""

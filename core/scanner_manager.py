@@ -118,8 +118,8 @@ class ScannerManager:
     # ------------------------------------------------------------
     def ignore_files(self, file_list):
         """
-        미등록 목록에서 선택된 파일들을 제외 처리한다.
-        - 실제 CSV 파일은 삭제하지 않고, 해당 폴더의 __ignored_unregistered__ 목록에 기록만 남긴다.
+        미등록 목록에서 선택된 파일들을 제외 (unregistered_files.json 에서 제거).
+        실제 CSV 파일은 삭제하지 않음.
         """
         if not file_list:
             return 0
@@ -127,34 +127,21 @@ class ScannerManager:
         ignored_count = 0
 
         for file_info in file_list:
-            company = file_info.get("company")
-            site = file_info.get("site")
-            folder = file_info.get("folder")
             filename = file_info.get("filename")
-
-            if not all([company, site, folder, filename]):
+            folder_path = file_info.get("folder_path") or (
+                os.path.dirname(file_info["path"]) if file_info.get("path") else ""
+            )
+            if not folder_path or not filename:
                 continue
 
-            try:
-                folder_cfg = (
-                    self.config.data
-                    .get(company, {})
-                    .get(site, {})
-                    .get(folder, {})
-                )
-                if not isinstance(folder_cfg, dict):
-                    continue
-
-                ignored_list = folder_cfg.setdefault("__ignored_unregistered__", [])
-                if filename not in ignored_list:
-                    ignored_list.append(filename)
-                    ignored_count += 1
-            except Exception as e:
-                self.logger.log(f"[Scanner] ignore_files 오류: {company}/{site}/{folder}/{filename} → {e}", level="ERROR")
+            if self.config.remove_unregistered_file(folder_path, filename):
+                ignored_count += 1
 
         if ignored_count > 0:
-            self.config.save()
-            self.logger.log(f"[Scanner] 미등록 목록에서 제외된 파일: {ignored_count}개", level="INFO")
+            self.logger.log(
+                f"[Scanner] 미등록 목록에서 제외: {ignored_count}개",
+                level="INFO",
+            )
 
         return ignored_count
 
@@ -218,18 +205,18 @@ class ScannerManager:
                         level="ERROR"
                     )
 
-                # 2) 미등록 목록에서 제거 (등록 성공 여부 무관 — 한 번 시도했으면 목록에서 뺌)
-                try:
-                    self.config.remove_unregistered_file(folder_path, filename)
-                    if registered_ok:
+                # 2) 등록 성공 시에만 미등록 목록에서 제거
+                if registered_ok:
+                    try:
+                        self.config.remove_unregistered_file(folder_path, filename)
                         self.logger.log(
                             f"[Scanner] 미등록 목록 제거: {folder_path}/{filename}"
                         )
-                except Exception as e:
-                    self.logger.log(
-                        f"[Scanner] 미등록 목록 제거 실패 {folder_path}/{filename}: {e}",
-                        level="WARN"
-                    )
+                    except Exception as e:
+                        self.logger.log(
+                            f"[Scanner] 미등록 목록 제거 실패 {folder_path}/{filename}: {e}",
+                            level="WARN",
+                        )
         
         self.config.save()
         self.logger.log(

@@ -49,6 +49,11 @@ class FillIntervalProcessor:
     # 1) 슬롯 매핑: 각 슬롯마다 원본에서 가장 가까운 행 1개
     # ─────────────────────────────────────────────────────────
     def map_slots(self, df: pd.DataFrame, interval_min: int) -> pd.DataFrame:
+        """
+        각 슬롯마다 원본에서 슬롯 시작(정각/N분)에 가장 가까운 행 1개만 남긴다.
+        - 원본 timestamp는 그대로 유지 (슬롯으로 바꾸지 않음)
+        - 계약: 슬롯당 최대 1행, 시간순 정렬
+        """
         if df is None or df.empty or not interval_min:
             return df if df is not None else pd.DataFrame()
 
@@ -60,36 +65,32 @@ class FillIntervalProcessor:
         if not valid.any():
             return pd.DataFrame(columns=df.columns)
 
-        rows = []
-        for idx in df.index[valid]:
-            ts = times.loc[idx]
-            slot_str = _slot_key(ts, interval_min)
-            if not slot_str:
-                continue
-            # 원본 timestamp는 그대로 두고, 슬롯 기준 선택만 위해 slot_str을 사용
-            row = df.loc[idx].copy()
-            dist = abs((ts - pd.to_datetime(slot_str)).total_seconds())
-            rows.append((slot_str, dist, row))
+        work = df.loc[valid].copy()
+        t = times.loc[valid]
+        total_m = t.dt.hour * 60 + t.dt.minute
+        slot_m = (total_m // int(interval_min)) * int(interval_min)
+        slot_ts = t.dt.floor("D") + pd.to_timedelta(slot_m.astype("int64"), unit="m")
+        dist = (t - slot_ts).abs()
 
-        if not rows:
-            return pd.DataFrame(columns=df.columns)
-
-        # 슬롯별로 거리 최소 행 1개만
-        by_slot = {}
-        for slot_str, dist, row in rows:
-            if slot_str not in by_slot or dist < by_slot[slot_str][0]:
-                by_slot[slot_str] = (dist, row)
-
-        result = pd.DataFrame([r[1] for r in by_slot.values()], columns=df.columns)
+        # 임시 열로 그룹핑 (원본 컬럼과 충돌 방지)
+        _slot_col = "__slot_ts__"
+        _dist_col = "__slot_dist__"
+        work[_slot_col] = slot_ts
+        work[_dist_col] = dist
+        # 동일 거리면 뒤 행 우선을 피하고 첫 최근접 유지: sort then drop_duplicates
+        work = work.sort_values(by=[_slot_col, _dist_col], kind="mergesort")
+        result = work.drop_duplicates(subset=[_slot_col], keep="first").drop(
+            columns=[_slot_col, _dist_col]
+        )
         try:
             result = result.sort_values(
                 by=df.columns[TIME_COL],
-                key=lambda s: pd.to_datetime(s, format="mixed", errors="coerce")
+                key=lambda s: pd.to_datetime(s, format="mixed", errors="coerce"),
             ).reset_index(drop=True)
         except Exception:
             result = result.sort_values(
                 by=df.columns[TIME_COL],
-                key=lambda s: pd.to_datetime(s, errors="coerce")
+                key=lambda s: pd.to_datetime(s, errors="coerce"),
             ).reset_index(drop=True)
         return result
 
@@ -302,27 +303,35 @@ class FillIntervalProcessor:
         max_rows: int = 24,
     ) -> pd.DataFrame:
         """
-        마지막 실측 시각 ~ 현재 구간을 주기로 채움.
-        max_rows: 최대 추가 행 수 (기본 24 = 60분 주기 시 1일치. 무제한 채움 방지)
+        마지막 행 슬롯 다음부터 **현재 슬롯(정각/N분 경계)** 까지 빈 슬롯을 채움.
+
+        예) interval=60, base=08:41, now=09:50 → 09:00 1행 추가
+            interval=60, base=07:05, now=09:50 → 08:00, 09:00 추가
+        (실측 시각 + N분이 아니라 슬롯 경계 기준)
         """
         self.last_added = 0
         if not interval_min or last_row_df is None or last_row_df.empty or base_time is None:
             return pd.DataFrame(columns=last_row_df.columns if last_row_df is not None else [])
 
         now = current_time_limit or datetime.now()
-        total_m = now.hour * 60 + now.minute
-        slot_end_m = ((total_m // interval_min) + 1) * interval_min
-        max_time = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(minutes=slot_end_m)
+        if hasattr(now, "to_pydatetime"):
+            now = now.to_pydatetime()
 
-        bt = base_time
-        if hasattr(bt, "to_pydatetime"):
-            bt = bt.to_pydatetime()
-        bt = bt.replace(second=0, microsecond=0)
-        if bt >= max_time:
+        total_m = now.hour * 60 + now.minute
+        slot_m = (total_m // interval_min) * interval_min
+        max_time = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(minutes=slot_m)
+
+        bt_slot = _slot_ts(base_time, interval_min)
+        if bt_slot is None:
+            return pd.DataFrame(columns=last_row_df.columns)
+        if hasattr(bt_slot, "to_pydatetime"):
+            bt_slot = bt_slot.to_pydatetime()
+
+        if bt_slot >= max_time:
             return pd.DataFrame(columns=last_row_df.columns)
 
         rows = []
-        t = bt + timedelta(minutes=interval_min)
+        t = bt_slot + timedelta(minutes=interval_min)
         while t <= max_time and len(rows) < max_rows:
             row = last_row_df.iloc[0].copy()
             row.iloc[TIME_COL] = t.strftime(FMT)
@@ -330,7 +339,11 @@ class FillIntervalProcessor:
             t += timedelta(minutes=interval_min)
 
         self.last_added = len(rows)
-        result = pd.DataFrame(rows, columns=last_row_df.columns).reset_index(drop=True) if rows else pd.DataFrame(columns=last_row_df.columns)
+        result = (
+            pd.DataFrame(rows, columns=last_row_df.columns).reset_index(drop=True)
+            if rows
+            else pd.DataFrame(columns=last_row_df.columns)
+        )
         if not result.empty:
             result["__filled__"] = True
         return result
@@ -346,5 +359,5 @@ class FillIntervalProcessor:
         if current_time_limit and isinstance(current_time_limit, datetime):
             total_m = current_time_limit.hour * 60 + current_time_limit.minute
             slot_m = (total_m // interval_min) * interval_min
-            max_time = current_time_limit.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(minutes=slot_m + interval_min)
+            max_time = current_time_limit.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(minutes=slot_m)
         return self.fill_gaps(df, interval_min, max_time)

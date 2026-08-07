@@ -37,7 +37,7 @@
 
 | 유형 | 대표 모드 | 특성 | 누락보충 적합 여부 |
 |------|----------|------|-------------------|
-| **행별 독립** | EL, V, OFFSET, SET, ANSAN_WM, EL_TAEAM, CHANG_V, CHANG_SM, TS, NM, EL_LOW, EL_STATION, EL_TUNNEL, VIBROMETER | 각 행의 원본값에 base/scale 적용 | ✅ 이전 값 유지 = 적합 |
+| **행별 독립** | EL, V, DY_V, OFFSET, SET, ANSAN_WM, EL_TAEAM, CHANG_V, CHANG_V2, CHANG_SM, TS, NM, EL_LOW, EL_STATION, EL_TUNNEL, VIBROMETER | 각 행의 원본값에 base/scale 적용 | ✅ 이전 값 유지 = 적합 |
 | **누적 이어가기** | FM | `__last_converted_row__`로 직전 변환본 값 이어감, 월~토 06~18시에만 증가 | ✅ 측정 없음 = 증가 없음 = 이전 값 유지 |
 | **완전 생성** | CR, CR_TAEAM, BASE_RAND | 원본 무시, base + cumsum/랜덤으로 가라값 생성 | ✅ 채워진 행은 이전 행의 생성값 복사 = 적합 |
 | **참조 복사** | COPY | 다른 컬럼 값을 그대로 복사 | ✅ 이전 행 복사 = 적합 |

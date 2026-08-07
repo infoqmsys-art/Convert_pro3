@@ -1,4 +1,4 @@
-﻿"""
+"""
 monitoring/data_cache.py
 
 변환 완료 시 file_processor가 호출 → monitoring_cache.json 에 캐시 저장
@@ -6,7 +6,7 @@ monitoring/data_cache.py
 
 캐시 구조:
 {
-  "company|folder|filename": {
+  "company|site|folder|filename": {
     "latest_values": {"CH0": 1.23, ...},
     "chart": {
       "labels": ["04/05 10:00", ...],   // 최근 48개
@@ -57,17 +57,32 @@ def _load_cache_from_disk() -> dict:
 
 
 # ─────────────────────────────────────────
+#  캐시 키
+# ─────────────────────────────────────────
+
+def _cache_key(company: str, site: str, folder: str, filename: str) -> str:
+    return f"{company}|{site}|{folder}|{filename}"
+
+
+def _legacy_cache_key(company: str, folder: str, filename: str) -> str:
+    return f"{company}|{folder}|{filename}"
+
+
+# ─────────────────────────────────────────
 #  캐시 읽기
 # ─────────────────────────────────────────
 
-def get_file_cache(company: str, folder: str, filename: str) -> dict | None:
-    """저장된 캐시 반환. 없으면 None. 파일 변경 시에만 디스크 재읽기."""
-    key = f"{company}|{folder}|{filename}"
+def get_file_cache(company: str, site: str, folder: str, filename: str) -> dict | None:
+    """저장된 캐시 반환. 없으면 None. v1 키 fallback."""
+    key = _cache_key(company, site, folder, filename)
+    legacy = _legacy_cache_key(company, folder, filename)
     try:
         if not CACHE_PATH.exists():
             return None
         data = _load_cache_from_disk()
-        return data.get(key)
+        if key in data:
+            return data[key]
+        return data.get(legacy)
     except Exception:
         return None
 
@@ -76,7 +91,7 @@ def get_file_cache(company: str, folder: str, filename: str) -> dict | None:
 #  캐시 쓰기 (file_processor에서 호출)
 # ─────────────────────────────────────────
 
-def update_file_cache(company: str, folder: str, filename: str, df) -> None:
+def update_file_cache(company: str, site: str, folder: str, filename: str, df) -> None:
     """
     변환 완료 직후 DataFrame(df)에서 캐시를 업데이트.
     df: 변환 완료된 전체 DataFrame (컬럼은 정수 인덱스 0~23)
@@ -131,11 +146,13 @@ def update_file_cache(company: str, folder: str, filename: str, df) -> None:
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-        key = f"{company}|{folder}|{filename}"
+        key = _cache_key(company, site, folder, filename)
+        legacy = _legacy_cache_key(company, folder, filename)
         with _lock:
             # 인메모리 캐시 기반으로 읽기 (파일 재읽기 최소화)
             cache = _load_cache_from_disk()
             cache[key] = entry
+            cache.pop(legacy, None)
             raw = json.dumps(cache, ensure_ascii=False, separators=(",", ":"))
             CACHE_PATH.write_text(raw, encoding="utf-8")
             # 인메모리 캐시 mtime 동기화

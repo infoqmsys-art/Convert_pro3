@@ -211,7 +211,7 @@ class UpdateManager:
                 
                 # **새 버전의 updater 사용**
                 updater_exe = new_updater
-                target_file = new_main_exe
+                target_file = temp_extract_dir
                 
                 if self.logger:
                     self.logger.log(f"새 버전 updater 사용: {updater_exe}", level="INFO")

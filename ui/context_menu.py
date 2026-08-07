@@ -86,11 +86,19 @@ class FolderContextMenu:
             self.menu.add_command(
                 label="변환본 시간 이후 삭제", command=self._trim_converted_from_time
             )
+            self.menu.add_separator()
+            self.menu.add_command(
+                label=self._align60_menu_label(),
+                command=self._toggle_align_60,
+            )
         elif node_type == "folder":
             # 폴더 전용: 폴더 업로드
             self.menu.add_separator()
             self.menu.add_command(label="폴더 업로드", command=self._upload_folder)
-        # site / company / summary 등은 기본 메뉴(비고 편집 + 삭제)만 사용
+        elif node_type == "site":
+            self.menu.add_separator()
+            self.menu.add_command(label="시간차단…", command=self._edit_site_time_block)
+        # site / company / summary 등은 기본 메뉴(비고 편집 + 삭제)만 사용 — site는 시간차단 추가
 
         self.menu.add_separator()
         self.menu.add_command(label="삭제", command=self._delete_selected)
@@ -160,6 +168,89 @@ class FolderContextMenu:
                 f"비고 수정 중 문제가 발생했습니다.\n\n오류 내용: {e}\n\n다시 시도해주세요.",
                 parent=self.root,
             )
+
+    def _edit_site_time_block(self):
+        """현장 단위 — 변환 시 데이터 시각이 현재 시각보다 늦으면 해당 행을 넣지 않음."""
+        info = self._get_current_item_info()
+        if not info or info["type"] != "site":
+            messagebox.showwarning(
+                "안내", "현장 노드를 선택한 뒤 다시 시도해주세요.", parent=self.root
+            )
+            return
+        company = info["company"]
+        site = info["site"]
+        try:
+            initial = self.app.tree.get_site_time_block_future(company, site)
+        except Exception:
+            initial = False
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("시간차단")
+        dlg.resizable(False, False)
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.geometry(
+            "+{}+{}".format(self.root.winfo_rootx() + 40, self.root.winfo_rooty() + 80)
+        )
+
+        fr = tk.Frame(dlg, padx=16, pady=12)
+        fr.pack(fill="both", expand=True)
+
+        tk.Label(fr, text=f"현장: {site}", font=("맑은 고딕", 10, "bold")).pack(
+            anchor="w", pady=(0, 8)
+        )
+
+        tk.Label(
+            fr,
+            text=(
+                "켜두면 이 현장에 속한 로거 파일을 변환할 때,\n"
+                "각 행의 첫 번째 열(timestamp)을 읽어\n"
+                "「변환을 실행하는 시점의 PC 시각」보다 늦은 시각인 행은\n"
+                "변환 결과에 포함하지 않습니다.\n\n"
+                "(로거 시간 오설정·미래 타임스탬프 보정 등에 활용)"
+            ),
+            justify="left",
+            font=("맑은 고딕", 9),
+            fg="#333",
+            wraplength=420,
+        ).pack(anchor="w", pady=(0, 10))
+
+        var = tk.BooleanVar(value=initial)
+        tk.Checkbutton(
+            fr,
+            text="현장 시간차단 사용 (미래 시각 행 제외)",
+            variable=var,
+            font=("맑은 고딕", 9),
+        ).pack(anchor="w", pady=(0, 12))
+
+        btn_row = tk.Frame(fr)
+        btn_row.pack(fill="x")
+
+        def apply_and_close():
+            val = var.get()
+            try:
+                self.app.tree.set_site_time_block_future(company, site, val)
+            except Exception as e:
+                messagebox.showerror("오류", str(e), parent=dlg)
+                return
+            dlg.destroy()
+            try:
+                self.app.ui.refresh_tree()
+            except Exception:
+                pass
+            messagebox.showinfo(
+                "저장 완료",
+                "현장 시간차단을 켰습니다." if val else "현장 시간차단을 껐습니다.",
+                parent=self.root,
+            )
+
+        tk.Button(
+            btn_row, text="확인", width=10, command=apply_and_close
+        ).pack(side="right", padx=(6, 0))
+        tk.Button(btn_row, text="취소", width=10, command=dlg.destroy).pack(side="right")
+
+        dlg.wait_visibility()
+        dlg.focus_force()
 
     # =========================
     # 파일 순서 변경 (위/아래)
@@ -283,6 +374,78 @@ class FolderContextMenu:
         self.app.trim_converted_file(
             info["company"], info["site"], info["folder"], info["filename"]
         )
+
+    def _align60_menu_label(self) -> str:
+        info = self._get_current_item_info()
+        if not info or info["type"] != "file":
+            return "60분 정렬 파일 지정"
+        try:
+            fc = (
+                self.app.config.data.get(info["company"], {})
+                .get(info["site"], {})
+                .get(info["folder"], {})
+                .get(info["filename"], {})
+            )
+            if bool(fc.get("__align_60__", False)):
+                return "60분 정렬 해제"
+        except Exception:
+            pass
+        return "60분 정렬 파일 지정"
+
+    def _toggle_align_60(self):
+        """파일별 60분 정렬 변환본({파일명}_60.csv) 생성 플래그 토글."""
+        info = self._get_current_item_info()
+        if not info or info["type"] != "file":
+            messagebox.showwarning(
+                "안내", "로거 파일을 먼저 선택해주세요.", parent=self.root
+            )
+            return
+
+        company = info["company"]
+        site = info["site"]
+        folder = info["folder"]
+        filename = info["filename"]
+
+        try:
+            file_cfg = self.app.config.ensure_logger(company, site, folder, filename)
+            enabled = bool(file_cfg.get("__align_60__", False))
+            file_cfg["__align_60__"] = not enabled
+            self.app.config.save()
+        except Exception as e:
+            messagebox.showerror(
+                "설정 실패",
+                f"60분 정렬 설정 저장 중 오류가 발생했습니다.\n\n{e}",
+                parent=self.root,
+            )
+            return
+
+        from utils.convert_paths import align60_filename
+
+        if file_cfg["__align_60__"]:
+            out_name = align60_filename(filename)
+            messagebox.showinfo(
+                "60분 정렬 파일",
+                f"변환 시 파일이 두 개로 나갑니다.\n\n"
+                f"• {filename}\n"
+                f"  → 10분 변환본 (진동계 등, 센서·누락보충 적용)\n\n"
+                f"• {out_name}\n"
+                f"  → 위 10분본을 60분에 가장 가까운 행만 골라 정렬 (EL·CR 등록용)\n"
+                f"  → 값은 10분본과 동일, 행 수만 줄어듭니다.",
+                parent=self.root,
+            )
+            if messagebox.askyesno(
+                "변환 실행",
+                "지금 변환을 실행할까요?",
+                parent=self.root,
+            ):
+                self.app.convert_single_file(company, site, folder, filename)
+        else:
+            messagebox.showinfo(
+                "60분 정렬 해제",
+                f"{filename}의 60분 정렬 생성을 끄었습니다.\n"
+                f"(기존 {align60_filename(filename)} 파일은 삭제하지 않습니다.)",
+                parent=self.root,
+            )
 
     def _trim_converted_multi(self):
         """변환본에서 지정 시간 이후(~끝) 데이터 삭제 — 다중 파일 일괄 (우클릭 메뉴)"""

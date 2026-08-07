@@ -1,0 +1,17 @@
+Convert Pro 3 — 배포 안내
+========================
+
+[일상 — 웹(monitoring)만]
+  개발 PC:  build_scripts\push.bat "변경 요약"
+  서버 PC:  Convert → 웹 패치  (git pull + monitoring 복사)
+
+[가끔 — 프로그램 EXE / 자동업데이트]
+  cd tools\release
+  python make.py
+  → [7] 전체 (Release + 배포)   → Convert_pro3_updates Release (_full.zip)
+
+저장소:
+  - 소스:  github.com/infoqmsys-art/Convert_pro3
+  - EXE:   github.com/infoqmsys-art/Convert_pro3_updates
+
+현장 PC EXE 업데이트: 프로그램 내 [프로그램 업데이트]

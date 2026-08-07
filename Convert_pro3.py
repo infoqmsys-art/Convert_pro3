@@ -319,14 +319,17 @@ class ConvertPro3App:
 
     def do_web_patch(self, repo_path: str, status_cb=None) -> dict:
         """
-        선택한 경로 아래 monitoring/ 과 실행 폴더 비교 후, 다를 때만 복사합니다.
-        (자동 git pull 없음 — 최신 받기는 해당 폴더에서 미리 하거나 ZIP 패치를 쓰세요.)
+        서버 PC용 웹 패치:
+          1) repo_path 에서 git pull --ff-only
+          2) monitoring/ 을 실행 폴더와 비교 후, 다를 때만 복사
 
-        repo_path : Convert_pro3 프로젝트 루트 (monitoring/ 포함)
+        repo_path : Convert_pro3 프로젝트 루트 (git clone, monitoring/ 포함)
         status_cb : 진행 상황 문자열 콜백 (선택)
-        반환값    : {'server_changed': bool, 'template_changed': bool, 'no_change': bool}
+        반환값    : {'server_changed': bool, 'template_changed': bool, 'no_change': bool,
+                     'pulled': bool}
         """
         import shutil
+        import subprocess
         from pathlib import Path
 
         def _status(msg):
@@ -375,6 +378,55 @@ class ConvertPro3App:
                         tpl = True
             return need, srv, tpl
 
+        def _git_pull(repo: Path) -> bool:
+            """pull 후 원격에서 받은 커밋이 있으면 True."""
+            git_dir = repo / '.git'
+            if not git_dir.exists():
+                raise RuntimeError(
+                    f"git 저장소가 아닙니다: {repo}\n"
+                    "Convert_pro3 를 git clone 한 폴더를 웹 패치 경로로 지정하세요."
+                )
+            try:
+                before = subprocess.run(
+                    ['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+                    capture_output=True, text=True, timeout=30,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                )
+                if before.returncode != 0:
+                    raise RuntimeError(
+                        (before.stderr or before.stdout or 'rev-parse 실패').strip()
+                    )
+                old_head = (before.stdout or '').strip()
+
+                _status('git pull 중…')
+                pull = subprocess.run(
+                    ['git', '-C', str(repo), 'pull', '--ff-only'],
+                    capture_output=True, text=True, timeout=120,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                )
+                if pull.returncode != 0:
+                    err = (pull.stderr or pull.stdout or 'git pull 실패').strip()
+                    raise RuntimeError(
+                        f"git pull 실패:\n{err}\n\n"
+                        "원격 인증·충돌·네트워크를 확인하세요."
+                    )
+                out = ((pull.stdout or '') + (pull.stderr or '')).strip()
+                if out:
+                    _status(out.splitlines()[-1][:120])
+
+                after = subprocess.run(
+                    ['git', '-C', str(repo), 'rev-parse', 'HEAD'],
+                    capture_output=True, text=True, timeout=30,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                )
+                new_head = (after.stdout or '').strip() if after.returncode == 0 else old_head
+                return bool(new_head and new_head != old_head)
+            except FileNotFoundError:
+                raise RuntimeError(
+                    "git 명령을 찾을 수 없습니다.\n"
+                    "서버 PC에 Git을 설치하고 PATH에 넣은 뒤 다시 시도하세요."
+                ) from None
+
         repo = Path(repo_path)
         src_monitoring = repo / 'monitoring'
         dst_monitoring = Path(self.base_dir) / 'monitoring'
@@ -385,16 +437,22 @@ class ConvertPro3App:
                 "올바른 Convert_pro3 저장소 폴더를 선택하세요."
             )
 
+        pulled = _git_pull(repo)
+
         _status("monitoring/ 내용 비교 중…")
         need_sync, server_changed, template_changed = _monitoring_differs(
             src_monitoring, dst_monitoring
         )
 
         if not need_sync:
-            _status("선택 폴더와 실행 폴더 monitoring/ 내용이 동일합니다.")
-            return {'no_change': True, 'server_changed': False, 'template_changed': False}
+            _status("저장소와 실행 폴더 monitoring/ 내용이 동일합니다.")
+            return {
+                'no_change': True,
+                'server_changed': False,
+                'template_changed': False,
+                'pulled': pulled,
+            }
 
-        # monitoring/ 복사
         _status('monitoring/ 실행 폴더로 복사 중...')
         dst_monitoring.mkdir(parents=True, exist_ok=True)
         (dst_monitoring / 'templates').mkdir(parents=True, exist_ok=True)
@@ -424,127 +482,8 @@ class ConvertPro3App:
         return {
             'no_change': False,
             'server_changed': server_changed,
-            'template_changed': template_changed
-        }
-
-    def do_web_patch_zip(self, status_cb=None) -> dict:
-        """
-        git 없이 GitHub ZIP으로 monitoring/ 최신화.
-        서버 PC에 git 미설치 시 사용.
-        """
-        import shutil
-        import tempfile
-        import zipfile
-        import requests
-        from pathlib import Path
-
-        GITHUB_ZIP_URL = "https://github.com/infoqmsys-art/Convert_pro3/archive/refs/heads/main.zip"
-        dst_monitoring = Path(self.base_dir) / 'monitoring'
-
-        def _status(msg):
-            self.logger.log(f'[WebPatchZIP] {msg}', level='INFO')
-            if status_cb:
-                status_cb(msg)
-
-        _status('GitHub에서 최신 소스 다운로드 중...')
-
-        with tempfile.TemporaryDirectory(prefix='qm_webpatch_') as tmp:
-            tmp_path = Path(tmp)
-            zip_path = tmp_path / 'source.zip'
-
-            # 다운로드
-            resp = requests.get(GITHUB_ZIP_URL, stream=True, timeout=60)
-            resp.raise_for_status()
-            with open(zip_path, 'wb') as f:
-                for chunk in resp.iter_content(chunk_size=65536):
-                    if chunk:
-                        f.write(chunk)
-
-            _status('압축 해제 중...')
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                zf.extractall(tmp_path)
-
-            # 압축 해제 후 최상위 폴더 찾기 (Convert_pro3-main/)
-            extracted_dirs = [d for d in tmp_path.iterdir()
-                              if d.is_dir() and d.name != '__MACOSX']
-            if not extracted_dirs:
-                raise RuntimeError("압축 해제 실패: 폴더를 찾을 수 없습니다.")
-            repo_root = extracted_dirs[0]
-            src_monitoring = repo_root / 'monitoring'
-
-            if not src_monitoring.exists():
-                raise RuntimeError("다운로드된 소스에 monitoring/ 폴더가 없습니다.")
-
-            # 변경 여부 확인 (mtime 비교 대신 파일 내용 비교)
-            _status('변경 사항 확인 중...')
-            server_changed = False
-            template_changed = False
-
-            def _files_differ(a: Path, b: Path) -> bool:
-                if not b.exists():
-                    return True
-                try:
-                    return a.read_bytes() != b.read_bytes()
-                except Exception:
-                    return True
-
-            for py_name in ('server.py', 'data_cache.py'):
-                src = src_monitoring / py_name
-                dst = dst_monitoring / py_name
-                if src.exists() and _files_differ(src, dst):
-                    server_changed = True
-
-            templates_src = src_monitoring / 'templates'
-            if templates_src.exists():
-                for f in templates_src.rglob('*'):
-                    if f.is_file():
-                        rel = f.relative_to(templates_src)
-                        if _files_differ(f, dst_monitoring / 'templates' / rel):
-                            template_changed = True
-                            break
-
-            static_src = src_monitoring / 'static'
-            if static_src.exists() and not template_changed:
-                for f in static_src.rglob('*'):
-                    if f.is_file():
-                        rel = f.relative_to(static_src)
-                        if _files_differ(f, dst_monitoring / 'static' / rel):
-                            template_changed = True
-                            break
-
-            if not server_changed and not template_changed:
-                return {'no_change': True, 'server_changed': False, 'template_changed': False}
-
-            # 복사
-            _status('파일 복사 중...')
-            dst_monitoring.mkdir(parents=True, exist_ok=True)
-            (dst_monitoring / 'templates').mkdir(parents=True, exist_ok=True)
-
-            for py_name in ('server.py', 'data_cache.py', '__init__.py'):
-                src = src_monitoring / py_name
-                if src.exists():
-                    shutil.copy2(src, dst_monitoring / py_name)
-
-            if templates_src.exists():
-                shutil.copytree(
-                    str(templates_src),
-                    str(dst_monitoring / 'templates'),
-                    dirs_exist_ok=True
-                )
-
-            static_src = src_monitoring / 'static'
-            if static_src.exists():
-                shutil.copytree(
-                    str(static_src),
-                    str(dst_monitoring / 'static'),
-                    dirs_exist_ok=True
-                )
-
-        _status(f'완료 (server.py={server_changed}, templates={template_changed})')
-        return {
-            'no_change': False,
-            'server_changed': server_changed,
-            'template_changed': template_changed
+            'template_changed': template_changed,
+            'pulled': pulled,
         }
 
     def restart_web_server(self):
@@ -668,24 +607,75 @@ class ConvertPro3App:
     def get_convert_path(self, company, site, folder, filename):
         """
         변환본 경로 반환
-        경로: C:\\data\\Convertfile\\{company}\\{folder}\\{filename}
+        경로: {convert_root}/{company}/{folder}/{filename}
         - 폴더명(로거 식별자)으로 매핑, 현장은 트리용 논리 레벨
         """
-        return os.path.join(
+        from utils.convert_paths import resolve_convert_out_path
+
+        return resolve_convert_out_path(
             self.file_processor.convert_root,
-            company, folder, filename
+            company,
+            site,
+            folder,
+            filename,
         )
+
+    def register_nb_folder(self, folder_path: str, company: str, site: str):
+        """
+        Neo Blast 원본 폴더 등록 + 마스터 CSV 최초 생성.
+        Returns: (ok: bool, message: str)
+        """
+        from core.neo_blast_processor import (
+            list_neo_blast_source_files,
+            nb_master_filename,
+            sync_neo_blast_folder,
+        )
+
+        folder_path = os.path.normpath(folder_path)
+        folder_name = os.path.basename(folder_path.rstrip("/\\"))
+        if not folder_name:
+            return False, "폴더 경로가 올바르지 않습니다."
+
+        sources = list_neo_blast_source_files(folder_path)
+        if not sources:
+            return False, "선택한 폴더에 .blast 또는 .txt 파일이 없습니다."
+
+        master_name = nb_master_filename(folder_name)
+        self.tree.add_folder(company, site, folder_name, folder_path)
+        self.tree.add_file(company, site, folder_name, master_name)
+
+        file_cfg = self.config.data[company][site][folder_name][master_name]
+        file_cfg["__nb_mode__"] = True
+        file_cfg["__nb_source_dir__"] = folder_path
+        file_cfg["__note__"] = "Neo Blast"
+        self.config.save()
+
+        out_path = self.get_convert_path(company, site, folder_name, master_name)
+        stats = sync_neo_blast_folder(folder_path, out_path, logger=self.logger)
+
+        msg = (
+            f"NB 로거 등록 완료\n"
+            f"- 현장: {company} / {site}\n"
+            f"- 폴더: {folder_name}\n"
+            f"- 마스터 CSV: {master_name}\n"
+            f"- 원본 스캔: {len(sources)}개\n"
+            f"- 신규 추가: {stats['appended']}행\n"
+            f"- 중복(시간) 스킵: {stats['skipped_dup']}개\n"
+            f"- 파싱 실패: {stats['failed']}개\n"
+            f"- CSV 총: {stats['total_rows']}행"
+        )
+        return True, msg
 
     # ======================================================
     # 배터리 포맷 (UI 전용)
     # ======================================================
     def format_battery(self, value):
         if value is None or value == "":
-            return ""
+            return "0.00 %"
         try:
             return f"{float(value):.2f} %"
-        except:
-            return ""
+        except Exception:
+            return "0.00 %"
 
     # ======================================================
     # 배터리 갱신
@@ -723,29 +713,30 @@ class ConvertPro3App:
         t.start()
 
     def convert_stop(self):
-        """변환 중지 요청 (진행 중인 작업은 완료 후, 대기 중인 작업은 취소)"""
-        if self.is_converting:
-            self.convert_stop_requested = True
-            self.logger.log("변환 중지 요청됨", level="INFO")
+        """변환 중지 요청 — 대기 작업 취소, UI는 즉시 '중지 중' 표시"""
+        if not self.is_converting:
+            return
+        self.convert_stop_requested = True
+        self._ui_call(self.ui.update_status, "변환 중지 중...", None)
+        self.logger.log("변환 중지", level="INFO")
 
     def _thread_convert(self):
         """멀티스레딩 변환 (ThreadPoolExecutor 사용)"""
         try:
             self.is_converting = True
             self._ui_call(self.ui.set_buttons_enabled, False)
-            
-            start = datetime.now()
 
-            self._thread_safe_log(
-                f"{APP_FULL_NAME} 전체 변환 시작 (멀티스레딩: {self.max_workers} workers)",
-                level="INFO"
-            )
+            start = datetime.now()
             self._log_memory("convert_all_start")
 
-            # 전체 파일 수 계산
             all_files = list(self.iter_config_files())
             total = len(all_files)
-            
+
+            self._thread_safe_log(
+                f"{APP_FULL_NAME} 변환 시작 (파일 {total}개)",
+                level="INFO"
+            )
+
             if total == 0:
                 self._thread_safe_log("변환할 파일이 없습니다.", level="INFO")
                 self._ui_call(self.ui.update_status, "변환할 파일 없음", 1.0)
@@ -756,40 +747,41 @@ class ConvertPro3App:
             fill_applied = 0
             errors = []
             completed_count = 0
+            converted_targets = []
+            last_status_at = 0.0
 
-            # ThreadPoolExecutor로 병렬 처리
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                # 모든 파일 변환 작업 제출
-                future_to_file = {
-                    executor.submit(
+            executor = ThreadPoolExecutor(max_workers=self.max_workers)
+            future_to_file = {}
+            try:
+                for company, site, folder, filename in all_files:
+                    if self.convert_stop_requested:
+                        break
+                    fut = executor.submit(
                         self._convert_single_file_safe,
-                        company, site, folder, filename
-                    ): (company, site, folder, filename)
-                    for company, site, folder, filename in all_files
-                }
+                        company, site, folder, filename,
+                    )
+                    future_to_file[fut] = (company, site, folder, filename)
 
-                # 완료된 작업 처리 (중지 요청 시 루프 탈출)
                 for future in as_completed(future_to_file):
                     company, site, folder, filename = future_to_file[future]
                     completed_count += 1
 
                     try:
-                        result = future.result()
-                        if result == "converted":
-                            converted += 1
-                        elif result == "fill":
-                            converted += 1
-                            fill_applied += 1
-                        elif result == "error":
-                            errors.append((company, site, folder, filename))
-                        else:
+                        if future.cancelled():
                             skipped += 1
-
-                        # 진행률 업데이트
-                        progress = completed_count / total
-                        status_msg = f"변환 중... {completed_count}/{total} 파일 처리 완료"
-                        self._ui_call(self.ui.update_status, status_msg, progress)
-
+                        else:
+                            result = future.result()
+                            if result == "converted":
+                                converted += 1
+                                converted_targets.append((company, site, folder, filename))
+                            elif result == "fill":
+                                converted += 1
+                                fill_applied += 1
+                                converted_targets.append((company, site, folder, filename))
+                            elif result == "error":
+                                errors.append((company, site, folder, filename))
+                            else:
+                                skipped += 1
                     except Exception as e:
                         errors.append((company, site, folder, filename))
                         self._thread_safe_log(
@@ -797,43 +789,61 @@ class ConvertPro3App:
                             level="ERROR"
                         )
 
+                    now_ts = time.time()
+                    if now_ts - last_status_at >= 0.25 or completed_count == total:
+                        last_status_at = now_ts
+                        if self.convert_stop_requested:
+                            status_msg = f"변환 중지 중... {completed_count}/{total}"
+                        else:
+                            status_msg = f"변환 중... {completed_count}/{total}"
+                        self._ui_call(
+                            self.ui.update_status,
+                            status_msg,
+                            completed_count / total if total else 1.0,
+                        )
+
                     if self.convert_stop_requested:
-                        cancelled = sum(1 for f in future_to_file if not f.done() and f.cancel())
-                        if cancelled:
-                            self._thread_safe_log(
-                                f"변환 중지: 대기 중인 {cancelled}개 작업 취소됨",
-                                level="INFO"
-                            )
+                        for f in future_to_file:
+                            if not f.done():
+                                f.cancel()
                         break
+            finally:
+                # 대기열 취소 후, 이미 실행 중인 worker만 대기 (전체 대기열 대기 방지)
+                executor.shutdown(wait=True, cancel_futures=True)
 
             elapsed = (datetime.now() - start).seconds
-            stop_msg = " (중지 요청으로 일부만 처리)" if self.convert_stop_requested else ""
-
-            self._thread_safe_log(
-                f"전체 처리 완료{stop_msg}\n"
-                f"- 대상 파일: {total}\n"
-                f"- 실제 변환: {converted}\n"
-                f"- 누락 보정 적용: {fill_applied}\n"
-                f"- 스킵: {skipped}\n"
-                f"- 오류: {len(errors)}\n"
-                f"- 소요 시간: {elapsed}s",
-                level="INFO"
-            )
+            if self.convert_stop_requested:
+                remaining = max(0, total - completed_count)
+                self._thread_safe_log(
+                    f"변환 중지: 변환 {converted} / 스킵 {skipped} / 오류 {len(errors)} "
+                    f"(미처리 {remaining}, {elapsed}s)",
+                    level="INFO",
+                )
+            else:
+                self._thread_safe_log(
+                    f"변환 완료: 변환 {converted} / 스킵 {skipped} / 오류 {len(errors)} "
+                    f"(누락보충 {fill_applied}, {elapsed}s)",
+                    level="INFO",
+                )
 
             if errors:
                 self._thread_safe_log(
-                    f"오류 발생 파일 ({len(errors)}개):\n" + 
-                    "\n".join([f"  - {c}/{s}/{f}/{n}" for c, s, f, n in errors[:10]]),
+                    f"오류 파일 ({len(errors)}개): "
+                    + ", ".join([f"{c}/{s}/{f}/{n}" for c, s, f, n in errors[:10]]),
                     level="ERROR"
                 )
 
             status_end = "변환 중지됨" if self.convert_stop_requested else "변환 완료"
             self._ui_call(self.ui.update_status, status_end, 1.0)
-            
-            # 변환 완료 후 배터리 갱신
-            self.refresh_battery_for_files(all_files)
-            
-            self._ui_call(self.ui.refresh_tree)
+
+            # 중지 시 전체 배터리 갱신은 UI 렉의 주원인 → 실제 변환된 것만
+            refresh_list = (
+                converted_targets
+                if self.convert_stop_requested
+                else all_files
+            )
+            if refresh_list:
+                self.refresh_battery_for_files(refresh_list)
             self._log_memory("convert_all_end")
 
         except Exception as e:
@@ -843,33 +853,35 @@ class ConvertPro3App:
                 f"전체 변환 중 오류 발생: {error_detail}",
                 level="ERROR"
             )
-            # 상세 오류 정보를 로그에 기록 (디버깅용)
-            self._thread_safe_log(
+            self.logger.log(
                 f"오류 상세 정보:\n{traceback.format_exc()}",
-                level="ERROR"
+                level="DEBUG"
             )
             self._ui_call(self.ui.update_status, f"변환 오류: {error_detail[:50]}", 0)
         finally:
             self.is_converting = False
             self._ui_call(self.ui.set_buttons_enabled, True)
-    
+
     def _convert_single_file_safe(self, company, site, folder, filename):
         """스레드 안전한 단일 파일 변환"""
+        if self.convert_stop_requested:
+            return "skipped"
         try:
-            return self.file_processor.convert_file(company, site, folder, filename)
+            return self.file_processor.convert_file(
+                company, site, folder, filename,
+                stop_check=lambda: self.convert_stop_requested,
+            )
         except Exception as e:
             self._thread_safe_log(
                 f"파일 변환 실패 {company}/{site}/{folder}/{filename}: {e}",
                 level="ERROR"
             )
             return "error"
-    
+
     def _thread_safe_log(self, message, level="INFO"):
-        """스레드 안전한 로그 출력"""
+        """스레드 안전한 로그 (Logger → UI 콜백 한 경로만 사용)"""
         with self.convert_lock:
             self.logger.log(message, level=level)
-            # UI 로그창에도 출력
-            self._ui_call(self.ui.append_log, f"[{level}] {message}")
 
     # ======================================================
     # 폴더 단위 변환
@@ -908,15 +920,17 @@ class ConvertPro3App:
 
             for idx, filename in enumerate(files, 1):
                 if self.convert_stop_requested:
-                    self.logger.log("변환 중지 요청으로 폴더 변환 중단", level="INFO")
                     break
 
                 # 진행 상태 업데이트
                 progress = idx / total if total > 0 else 0
-                status_msg = f"폴더 변환 중... {idx}/{total} 파일 처리 중 ({filename})"
+                status_msg = f"폴더 변환 중... {idx}/{total} ({filename})"
                 self._ui_call(self.ui.update_status, status_msg, progress)
 
-                result = self.file_processor.convert_file(company, site, folder, filename)
+                result = self.file_processor.convert_file(
+                    company, site, folder, filename,
+                    stop_check=lambda: self.convert_stop_requested,
+                )
 
                 if result == "converted":
                     converted += 1
@@ -927,26 +941,23 @@ class ConvertPro3App:
                     skipped += 1
 
             elapsed = (datetime.now() - start).seconds
-            stop_msg = " (중지 요청)" if self.convert_stop_requested else ""
-
-            self.logger.log(
-                f"폴더 변환 완료{stop_msg}: {company}/{site}/{folder}\n"
-                f"- 대상 파일: {total}\n"
-                f"- 실제 변환: {converted}\n"
-                f"- 누락 보정 적용: {fill_applied}\n"
-                f"- 스킵: {skipped}\n"
-                f"- 소요 시간: {elapsed}s",
-                level="INFO"
-            )
+            if self.convert_stop_requested:
+                self.logger.log(
+                    f"폴더 변환 중지: {company}/{site}/{folder} — "
+                    f"변환 {converted} / 스킵 {skipped} ({elapsed}s)",
+                    level="INFO",
+                )
+            else:
+                self.logger.log(
+                    f"폴더 변환 완료: {company}/{site}/{folder} — "
+                    f"변환 {converted} / 스킵 {skipped} (누락보충 {fill_applied}, {elapsed}s)",
+                    level="INFO",
+                )
 
             status_end = "폴더 변환 중지됨" if self.convert_stop_requested else f"폴더 변환 완료: {folder}"
             self._ui_call(self.ui.update_status, status_end, 1.0)
-            
-            # 변환 완료 후 배터리 갱신
-            converted_files = [(company, site, folder, f) for f in files]
-            self.refresh_battery_for_files(converted_files)
-            
-            self._ui_call(self.ui.refresh_tree)
+            if not self.convert_stop_requested:
+                self.refresh_battery_for_files([(company, site, folder, f) for f in files])
 
         except Exception as e:
             self.logger.log(
@@ -992,12 +1003,14 @@ class ConvertPro3App:
 
             for idx, (company, site, folder, filename) in enumerate(files_list, 1):
                 if self.convert_stop_requested:
-                    self.logger.log("변환 중지 요청으로 일괄 변환 중단", level="INFO")
                     break
                 progress = idx / total if total > 0 else 0
                 self._ui_call(self.ui.update_status,
                               f"{label} 변환 중... {idx}/{total} ({filename})", progress)
-                result = self.file_processor.convert_file(company, site, folder, filename)
+                result = self.file_processor.convert_file(
+                    company, site, folder, filename,
+                    stop_check=lambda: self.convert_stop_requested,
+                )
                 if result == "converted":
                     converted += 1
                 elif result == "fill":
@@ -1007,12 +1020,17 @@ class ConvertPro3App:
                     skipped += 1
 
             elapsed = (datetime.now() - start).total_seconds()
-            fill_info = f", 채움 적용 {fill_applied}건" if fill_applied else ""
-            msg = (f"{label} 변환 완료: {converted}건 변환, "
-                   f"{skipped}건 건너뜀{fill_info} ({elapsed:.1f}초)")
+            fill_info = f", 누락보충 {fill_applied}" if fill_applied else ""
+            if self.convert_stop_requested:
+                msg = (f"{label} 변환 중지: 변환 {converted} / 스킵 {skipped}"
+                       f"{fill_info} ({elapsed:.1f}s)")
+            else:
+                msg = (f"{label} 변환 완료: 변환 {converted} / 스킵 {skipped}"
+                       f"{fill_info} ({elapsed:.1f}s)")
             self.logger.log(msg, level="INFO")
             self._ui_call(self.ui.update_status, msg, 1.0)
-            self._ui_call(self.ui.refresh_tree)
+            if not self.convert_stop_requested:
+                self.refresh_battery_for_files(files_list)
 
         except Exception as e:
             self.logger.log(f"{label} 변환 오류: {e}", level="ERROR")
@@ -1061,9 +1079,6 @@ class ConvertPro3App:
                     level="INFO"
                 )
                 self._ui_call(self.ui.update_status, f"파일 변환 완료: {filename}", 1.0)
-                
-                # 변환 완료 후 배터리 갱신
-                self.refresh_battery_for_files([(company, site, folder, filename)])
             else:
                 self.logger.log(
                     f"파일 변환 스킵: {company}/{site}/{folder}/{filename}",
@@ -1071,7 +1086,7 @@ class ConvertPro3App:
                 )
                 self._ui_call(self.ui.update_status, f"파일 변환 스킵: {filename}", 1.0)
 
-            self._ui_call(self.ui.refresh_tree)
+            self.refresh_battery_for_files([(company, site, folder, filename)])
 
         except Exception as e:
             self.logger.log(

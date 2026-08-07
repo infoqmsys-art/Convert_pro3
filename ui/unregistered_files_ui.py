@@ -240,12 +240,16 @@ class UnregisteredFilesUI:
         self.win.update()
         
         # 특정 폴더가 지정된 경우 해당 폴더만 스캔하여 미등록 목록에 추가
+        scan_summary = None
         if self.target_folder_path:
-            files = self._scan_single_folder(self.target_folder_path)
-            # 추가 후 전체 목록 다시 읽기
+            scan_summary = self._scan_single_folder(self.target_folder_path)
             files = self.scanner.scan_all_folders()
+            norm_target = self.app.config._normalize_folder_path(self.target_folder_path)
+            files = [
+                f for f in files
+                if self.app.config._normalize_folder_path(f.get("folder_path", "")) == norm_target
+            ]
         else:
-            # config.json의 __unregistered_files__에서 읽기
             files = self.scanner.scan_all_folders()
         
         # 현재 파일 목록 저장 (등록 시 사용)
@@ -256,10 +260,24 @@ class UnregisteredFilesUI:
         self.check_vars = {}
         
         if not files:
-            self.status_label.config(
-                text="미등록 파일이 없습니다.",
-                fg="#27AE60"
-            )
+            if scan_summary and scan_summary.get("registered"):
+                reg_lines = [
+                    f"{x['filename']} (등록됨: {x['location']})"
+                    for x in scan_summary["registered"][:3]
+                ]
+                extra = len(scan_summary["registered"]) - 3
+                hint = " · ".join(reg_lines)
+                if extra > 0:
+                    hint += f" 외 {extra}개"
+                self.status_label.config(
+                    text=f"미등록 파일 없음 — 이미 config에 등록된 파일: {hint}",
+                    fg="#D97706",
+                )
+            else:
+                self.status_label.config(
+                    text="미등록 파일이 없습니다.",
+                    fg="#27AE60",
+                )
             return
         
         # 파일 목록 추가
@@ -299,10 +317,15 @@ class UnregisteredFilesUI:
             check_var.trace_add("write", lambda *args, key=file_key: self._update_checkbox(key))
         
         if len(files) > 0:
-            self.status_label.config(
-                text=f"총 {len(files)}개의 미등록 파일이 발견되었습니다.",
-                fg="#2C3E50"
-            )
+            msg = f"총 {len(files)}개의 미등록 파일"
+            if self.target_folder_path:
+                folder_name = os.path.basename(self.target_folder_path.rstrip("/\\"))
+                msg += f" ({folder_name} 폴더)"
+            if scan_summary:
+                msg += f" — 스캔: 추가 {scan_summary.get('added', 0)}, 스킵 {scan_summary.get('skipped', 0)}"
+                if scan_summary.get("registered"):
+                    msg += f", config등록 {len(scan_summary['registered'])}"
+            self.status_label.config(text=msg, fg="#2C3E50")
         else:
             self.status_label.config(
                 text="미등록 파일이 없습니다.",
@@ -311,71 +334,78 @@ class UnregisteredFilesUI:
     
     def _scan_single_folder(self, folder_path):
         """특정 폴더만 스캔하여 미등록 파일 목록에 추가 (로거파일 등록용)"""
+        summary = {"added": 0, "skipped": 0, "registered": [], "errors": []}
         if not os.path.exists(folder_path):
-            return []
-        
+            summary["errors"].append(f"폴더 없음: {folder_path}")
+            return summary
+
         folder_name = os.path.basename(folder_path.rstrip("/\\"))
-        files = []
-        
+
         try:
-            # 폴더 내 CSV 파일 찾기
-            csv_files = [
-                f for f in os.listdir(folder_path) 
+            csv_files = sorted(
+                f for f in os.listdir(folder_path)
                 if f.lower().endswith(".csv")
-            ]
-            
-            added_count = 0
-            skipped_count = 0
+            )
+
             for filename in csv_files:
                 file_path = os.path.join(folder_path, filename)
                 try:
+                    reg = self.app.config.find_file_registration(folder_path, filename)
+                    if reg:
+                        company, site, folder = reg
+                        summary["registered"].append({
+                            "filename": filename,
+                            "folder_path": folder_path,
+                            "location": f"{company}/{site}/{folder}",
+                        })
+                        summary["skipped"] += 1
+                        self.app.logger.log(
+                            f"[UI] 미등록 스킵 (config 등록됨): {folder_path}/{filename} → "
+                            f"{company}/{site}/{folder}",
+                            level="INFO",
+                        )
+                        continue
+
                     stat = os.stat(file_path)
-                    
                     result = self.app.config.add_unregistered_file(
-                        folder_path, filename, stat.st_size,
-                        datetime.fromtimestamp(stat.st_mtime)
+                        folder_path,
+                        filename,
+                        stat.st_size,
+                        datetime.fromtimestamp(stat.st_mtime),
                     )
                     if result:
-                        added_count += 1
+                        summary["added"] += 1
                         self.app.logger.log(
                             f"[UI] 미등록 파일 추가: {folder_path}/{filename}",
-                            level="INFO"
+                            level="INFO",
                         )
-                        # UI 표시용 정보 (미등록 목록에 추가된 것만)
-                        files.append({
-                            "company": None,
-                            "site": None,
-                            "folder": folder_name,
-                            "folder_path": folder_path,
-                            "filename": filename,
-                            "path": file_path,
-                            "size": stat.st_size,
-                            "mtime": datetime.fromtimestamp(stat.st_mtime)
-                        })
                     else:
-                        skipped_count += 1
+                        summary["skipped"] += 1
                         self.app.logger.log(
-                            f"[UI] 미등록 추가 스킵 (이미 등록/중복): {folder_path}/{filename}",
-                            level="INFO"
+                            f"[UI] 미등록 추가 스킵 (목록에 있음): {folder_path}/{filename}",
+                            level="INFO",
                         )
                 except Exception as e:
+                    summary["errors"].append(f"{filename}: {e}")
                     self.app.logger.log(
                         f"파일 정보 읽기 실패 {file_path}: {e}",
-                        level="ERROR"
+                        level="ERROR",
                     )
-            
-            # 메시지박스 대신 상태 라벨로 결과 표시 (호출부에서 처리)
+
             self.app.logger.log(
-                f"[UI] 폴더 스캔 완료: {folder_path} — 추가 {added_count}개, 스킵 {skipped_count}개",
-                level="INFO"
+                f"[UI] 폴더 스캔 완료: {folder_path} — "
+                f"추가 {summary['added']}, 스킵 {summary['skipped']}, "
+                f"config등록 {len(summary['registered'])}",
+                level="INFO",
             )
         except Exception as e:
+            summary["errors"].append(str(e))
             self.app.logger.log(
                 f"폴더 스캔 오류 {folder_path}: {e}",
-                level="ERROR"
+                level="ERROR",
             )
-        
-        return files
+
+        return summary
 
     def _format_size(self, size_bytes):
         """파일 크기 포맷팅"""

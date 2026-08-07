@@ -88,6 +88,36 @@ def perform_update(current_exe, new_exe, should_restart=True, silent=False):
     gui = DummyGUI() if silent else UpdaterGUI()
     
     try:
+        current_exe_p = Path(current_exe)
+        payload_p = Path(new_exe)
+
+        def _pick_payload_main_exe(payload_dir: Path) -> Path | None:
+            candidates = [p for p in payload_dir.glob("*.exe") if "updater" not in p.name.lower()]
+            if not candidates:
+                return None
+            same_name = [p for p in candidates if p.name.lower() == current_exe_p.name.lower()]
+            if same_name:
+                return same_name[0]
+            try:
+                candidates.sort(key=lambda p: p.stat().st_size, reverse=True)
+            except Exception:
+                pass
+            return candidates[0]
+
+        def _sync_tree(src: Path, dst: Path) -> None:
+            if not src.exists():
+                return
+            for p in src.rglob("*"):
+                rel = p.relative_to(src)
+                target = dst / rel
+                if p.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(p, target)
+
+        is_payload_dir = payload_p.exists() and payload_p.is_dir()
+
         # 1. 프로세스 종료 대기
         gui.update_status(
             "프로그램 종료 대기 중...",
@@ -111,7 +141,7 @@ def perform_update(current_exe, new_exe, should_restart=True, silent=False):
         )
         
         backup_path = str(current_exe) + ".backup"
-        if Path(current_exe).exists():
+        if current_exe_p.exists():
             shutil.copy2(current_exe, backup_path)
         
         # 3. 파일 교체
@@ -119,26 +149,58 @@ def perform_update(current_exe, new_exe, should_restart=True, silent=False):
             "파일 업데이트 중...",
             "새 버전으로 교체합니다."
         )
-        
-        shutil.copy2(new_exe, current_exe)
-        time.sleep(0.5)
-        
-        # 4. 새 파일 삭제
-        try:
-            Path(new_exe).unlink()
-        except:
-            pass
-        
-        # 4-1. 임시 폴더 정리 (ZIP 압축 해제 시 생성된 폴더)
-        try:
-            new_exe_parent = Path(new_exe).parent
-            # temp 폴더 하위에 있으면 정리 (convertpro3_update_ 접두사로 생성된 것)
-            import tempfile
-            tmp_root = Path(tempfile.gettempdir())
-            if new_exe_parent != tmp_root and str(new_exe_parent).startswith(str(tmp_root)):
-                shutil.rmtree(new_exe_parent, ignore_errors=True)
-        except Exception:
-            pass
+
+        if is_payload_dir:
+            payload_dir = payload_p
+            payload_exe = _pick_payload_main_exe(payload_dir)
+            if not payload_exe or not payload_exe.exists():
+                raise RuntimeError(f"업데이트 패키지에 메인 EXE가 없습니다: {payload_dir}")
+
+            shutil.copy2(str(payload_exe), str(current_exe_p))
+
+            app_dir = current_exe_p.parent
+            payload_tools_updater = payload_dir / "tools" / "updater.exe"
+            if payload_tools_updater.exists():
+                dst_tools_dir = app_dir / "tools"
+                dst_tools_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(payload_tools_updater), str(dst_tools_dir / "updater.exe"))
+
+            for dname in ("monitoring", "measurement_portal", "survey_mgmt_portal"):
+                src_dir = payload_dir / dname
+                if src_dir.exists() and src_dir.is_dir():
+                    _sync_tree(src_dir, app_dir / dname)
+
+            time.sleep(0.5)
+        else:
+            shutil.copy2(new_exe, current_exe)
+            time.sleep(0.5)
+
+            app_dir = current_exe_p.parent
+            payload_root = payload_p.parent
+            payload_tools_updater = payload_root / "tools" / "updater.exe"
+            if payload_tools_updater.exists():
+                dst_tools_dir = app_dir / "tools"
+                dst_tools_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(payload_tools_updater), str(dst_tools_dir / "updater.exe"))
+
+            for dname in ("monitoring", "measurement_portal", "survey_mgmt_portal"):
+                src_dir = payload_root / dname
+                if src_dir.exists() and src_dir.is_dir():
+                    _sync_tree(src_dir, app_dir / dname)
+
+            try:
+                payload_p.unlink()
+            except Exception:
+                pass
+
+            try:
+                new_exe_parent = payload_p.parent
+                import tempfile
+                tmp_root = Path(tempfile.gettempdir())
+                if new_exe_parent != tmp_root and str(new_exe_parent).startswith(str(tmp_root)):
+                    shutil.rmtree(new_exe_parent, ignore_errors=True)
+            except Exception:
+                pass
 
         # 5. 프로그램 재시작 (작업 디렉토리=exe 위치, 창 없이)
         if should_restart:
@@ -148,7 +210,7 @@ def perform_update(current_exe, new_exe, should_restart=True, silent=False):
             )
             time.sleep(0.5)
             
-            app_dir = str(Path(current_exe).parent)
+            app_dir = str(current_exe_p.parent)
             subprocess.Popen(
                 [current_exe],
                 cwd=app_dir,

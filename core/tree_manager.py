@@ -307,6 +307,23 @@ class TreeManager:
             self.cfg.data[company][site]["__note__"] = note
             self.cfg.save()
             self.logger.log(f"[Tree] 현장 비고 설정: {company}/{site} → {note}")
+
+    def get_site_time_block_future(self, company: str, site: str) -> bool:
+        """변환 시 데이터 timestamp가 현재 시각보다 늦은 행을 제외할지(현장 단위)."""
+        d = self.cfg.data.get(company, {}).get(site, {})
+        if not isinstance(d, dict):
+            return False
+        return bool(d.get("__time_block_future__", False))
+
+    def set_site_time_block_future(self, company: str, site: str, enabled: bool) -> None:
+        """현장 시간차단 플래그 저장."""
+        if company not in self.cfg.data or site not in self.cfg.data[company]:
+            raise KeyError(f"현장 없음: {company}/{site}")
+        self.cfg.data[company][site]["__time_block_future__"] = bool(enabled)
+        self.cfg.save()
+        self.logger.log(
+            f"[Tree] 현장 시간차단(미래시각 행 제외): {company}/{site} → {bool(enabled)}"
+        )
     
     def set_folder_note(self, company, site, folder, note):
         """폴더 비고 설정 (Site 레벨 포함)"""

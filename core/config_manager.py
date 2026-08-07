@@ -33,7 +33,7 @@
   - base    : 기준값 / 오프셋 값
   - scale   : 배율
   - initial : 초기 기준값
-  - decimal : 출력 소수점 자리수 (후처리, mode 아님)
+  - post_offset: 모드·PASS 등 변환 직후 해당 채널 열 전체에 더하는 값(비우면 0). 레거시 'offset'(모드)과 별개.
 
 3. 주의사항
 - 과거 config에서는 'offset'이라는 키를 mode 용도로 사용했으나,
@@ -66,6 +66,7 @@ class ConfigManager:
                 "__absolute_path__": "C:/data/SAEGL03504",
                 "1227998430.csv": {
                     "__fill_interval__": 0,
+                    "__align_60__": False,  # True → {파일}_60.csv 추가 (EL/CR용, fill과 별개)
                     "__gen_interval__": 0,
                     "CH0": {...}, "CH1": {...}, ...
                 }
@@ -231,6 +232,28 @@ class ConfigManager:
         # 버전 1 → 2 마이그레이션 (Site 레벨 추가)
         if self.data.get("__version__", 1) < 2:
             self._migrate_v1_to_v2()
+
+        self._ensure_file_meta_keys()
+    
+    def _ensure_file_meta_keys(self):
+        """로거 CSV 설정 dict에 공통 메타 키 보장."""
+        for company, sites in self.data.items():
+            if company.startswith("__") or not isinstance(sites, dict):
+                continue
+            for site_name, site_data in sites.items():
+                if site_name.startswith("__") or not isinstance(site_data, dict):
+                    continue
+                for folder_name, folder_data in site_data.items():
+                    if folder_name.startswith("__") or not isinstance(folder_data, dict):
+                        continue
+                    for filename, file_data in folder_data.items():
+                        if not filename.lower().endswith(".csv") or not isinstance(file_data, dict):
+                            continue
+                        if filename.endswith("_60.csv"):
+                            continue
+                        file_data.setdefault("__fill_interval__", 0)
+                        file_data.setdefault("__gen_interval__", 0)
+                        file_data.setdefault("__align_60__", False)
     
     def _migrate_unregistered_files(self):
         """config.json의 __unregistered_files__를 별도 파일로 마이그레이션"""
@@ -246,14 +269,20 @@ class ConfigManager:
         # 기존 별도 파일이 있으면 병합, 없으면 그대로 이동
         existing_files = self._load_unregistered_files()
         existing_paths = {
-            (item.get("folder_path"), item.get("filename"))
+            (
+                self._normalize_folder_path(item.get("folder_path")),
+                item.get("filename"),
+            )
             for item in existing_files
         }
         
         # 중복 제거하며 병합
         for item in unregistered_list:
-            key = (item.get("folder_path"), item.get("filename"))
-            if key not in existing_paths:
+            key = (
+                self._normalize_folder_path(item.get("folder_path")),
+                item.get("filename"),
+            )
+            if key[0] and key[1] and key not in existing_paths:
                 existing_files.append(item)
                 existing_paths.add(key)
         
@@ -433,6 +462,7 @@ class ConfigManager:
                 "__order__": max_order + 1,
                 "__fill_interval__": 0,
                 "__gen_interval__": 0,
+                "__align_60__": False,
                 "__is_ghost__": False
             }
 
@@ -574,6 +604,57 @@ class ConfigManager:
         self.save()
         self._log(f"[ConfigManager] 경로 재지정: {company}/{site}/{folder} → {new_path}")
         return True
+
+    def remove_ghost_folders(self):
+        """
+        Ghost(경로 유실) 폴더와 하위 파일을 config에서 삭제.
+        빈 현장·빈 업체도 함께 정리.
+
+        Returns:
+            list[str]: 삭제된 항목 경로 문자열
+        """
+        self.check_path_validity()
+        removed = []
+
+        for company in list(self.data.keys()):
+            if company.startswith("__") or not isinstance(self.data[company], dict):
+                continue
+            sites = self.data[company]
+
+            for site_name in list(sites.keys()):
+                if site_name.startswith("__") or not isinstance(sites[site_name], dict):
+                    continue
+                site_data = sites[site_name]
+
+                for folder_name in list(site_data.keys()):
+                    if folder_name.startswith("__") or not isinstance(
+                        site_data[folder_name], dict
+                    ):
+                        continue
+                    if not site_data[folder_name].get("__is_ghost__"):
+                        continue
+                    del site_data[folder_name]
+                    label = f"{company}/{site_name}/{folder_name}"
+                    removed.append(label)
+                    self._log(f"[ConfigManager] Ghost 폴더 삭제: {label}")
+
+                non_meta = [k for k in site_data if not k.startswith("__")]
+                if not non_meta:
+                    del sites[site_name]
+                    removed.append(f"{company}/{site_name}/(현장)")
+                    self._log(f"[ConfigManager] 빈 Ghost 현장 삭제: {company}/{site_name}")
+
+            non_meta_sites = [
+                k for k in self.data[company] if not k.startswith("__")
+            ]
+            if not non_meta_sites:
+                del self.data[company]
+                removed.append(f"{company}/(업체)")
+                self._log(f"[ConfigManager] 빈 업체 삭제: {company}")
+
+        if removed:
+            self.save()
+        return removed
     
     # -----------------------------------------------------
     # 미등록 파일 관리 (별도 파일: unregistered_files.json)
@@ -600,6 +681,57 @@ class ConfigManager:
         except Exception as e:
             self._log(f"미등록 파일 목록 저장 실패: {e}", level="ERROR")
     
+    def _normalize_folder_path(self, path):
+        """폴더 경로 비교용 정규화 (Windows: 대소문자·슬래시 통일)."""
+        if not path:
+            return ""
+        try:
+            normalized = os.path.normpath(os.path.abspath(path))
+            return normalized.lower() if os.name == "nt" else normalized
+        except Exception:
+            normalized = os.path.normpath(str(path))
+            return normalized.lower() if os.name == "nt" else normalized
+
+    def find_file_registration(self, folder_path, filename):
+        """
+        config.json 에 등록된 파일 위치 반환 (물리 폴더 경로 + 파일명 기준).
+
+        동일 파일명이 다른 폴더에 있어도 __absolute_path__ 가 다르면 별도 항목으로 취급.
+
+        Args:
+            folder_path: 원본 CSV가 있는 폴더 경로
+            filename: CSV 파일명
+
+        Returns:
+            (company, site, folder) 또는 None
+        """
+        if not folder_path or not filename:
+            return None
+
+        norm_target = self._normalize_folder_path(folder_path)
+
+        for company, company_data in self.data.items():
+            if company.startswith("__") or not isinstance(company_data, dict):
+                continue
+            for site, site_data in company_data.items():
+                if site.startswith("__") or not isinstance(site_data, dict):
+                    continue
+                for folder, folder_data in site_data.items():
+                    if folder.startswith("__") or not isinstance(folder_data, dict):
+                        continue
+                    abs_path = folder_data.get("__absolute_path__", "")
+                    if not abs_path:
+                        continue
+                    if self._normalize_folder_path(abs_path) != norm_target:
+                        continue
+                    file_cfg = folder_data.get(filename)
+                    if isinstance(file_cfg, dict):
+                        return company, site, folder
+        return None
+
+    def is_file_registered(self, folder_path, filename):
+        return self.find_file_registration(folder_path, filename) is not None
+
     def add_unregistered_file(self, folder_path, filename, size=None, mtime=None):
         """
         미등록 파일 목록에 추가 (로거 등록 시 사용)
@@ -611,28 +743,32 @@ class ConfigManager:
             mtime: 수정일시 (선택)
         """
         # 이미 config에 등록된 파일이면 미등록 목록에 추가하지 않음
-        folder_name = os.path.basename(folder_path.rstrip("/\\")) if folder_path else ""
-        for company_data in self.data.values():
-            if not isinstance(company_data, dict):
-                continue
-            for site_data in company_data.values():
-                if not isinstance(site_data, dict):
-                    continue
-                for f_key, f_val in site_data.items():
-                    if f_key.startswith("__") or not isinstance(f_val, dict):
-                        continue
-                    if filename in f_val:
-                        self._log(
-                            f"[ConfigManager] 미등록 추가 스킵 (이미 등록됨): {folder_path}/{filename}"
-                        )
-                        return False
+        reg = self.find_file_registration(folder_path, filename)
+        if reg:
+            company, site, folder = reg
+            self._log(
+                f"[ConfigManager] 미등록 추가 스킵 (이미 등록됨): {folder_path}/{filename} "
+                f"→ {company}/{site}/{folder}"
+            )
+            return False
 
         files_list = self._load_unregistered_files()
-        
-        # 중복 확인
+        norm_folder = self._normalize_folder_path(folder_path)
+
+        # 중복 확인 (경로 정규화) — 있으면 size/mtime 갱신
         for item in files_list:
-            if item.get("folder_path") == folder_path and item.get("filename") == filename:
-                return False  # 이미 존재
+            if (
+                self._normalize_folder_path(item.get("folder_path")) == norm_folder
+                and item.get("filename") == filename
+            ):
+                if size is not None:
+                    item["size"] = size
+                if mtime is not None:
+                    item["mtime"] = (
+                        mtime.isoformat() if hasattr(mtime, "isoformat") else str(mtime)
+                    )
+                self._save_unregistered_files(files_list)
+                return False  # 이미 목록에 있음 (갱신만)
         
         # 추가
         file_info = {
@@ -663,21 +799,7 @@ class ConfigManager:
         files_list = self._load_unregistered_files()
         original_count = len(files_list)
         
-        # 경로 정규화 함수 (대소문자, 구분자 통일)
-        def normalize_path(path):
-            if not path:
-                return ""
-            # 절대 경로로 변환 후 정규화
-            try:
-                abs_path = os.path.abspath(path)
-                normalized = os.path.normpath(abs_path)
-                # Windows에서는 대소문자 구분 안 함
-                return normalized.lower() if os.name == 'nt' else normalized
-            except:
-                # 경로 변환 실패 시 원본 경로 정규화만
-                return os.path.normpath(path).lower() if os.name == 'nt' else os.path.normpath(path)
-        
-        normalized_target_path = normalize_path(folder_path)
+        normalized_target_path = self._normalize_folder_path(folder_path)
         
         new_files_list = []
         removed = False
@@ -685,10 +807,10 @@ class ConfigManager:
             item_folder_path = item.get("folder_path", "")
             item_filename = item.get("filename", "")
             
-            # 경로 정규화하여 비교
-            normalized_item_path = normalize_path(item_folder_path)
-            
-            if normalized_item_path == normalized_target_path and item_filename == filename:
+            if (
+                self._normalize_folder_path(item_folder_path) == normalized_target_path
+                and item_filename == filename
+            ):
                 removed = True
                 self._log(f"[ConfigManager] 미등록 파일 제거: {folder_path}/{filename}")
             else:
