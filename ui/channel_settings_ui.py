@@ -96,14 +96,16 @@ class ChannelSettingsUI:
 
         # Toplevel UI
         self.win = tk.Toplevel(self.root)
-        self.win.title(f"채널 설정 - {company}/{site}/{folder}/{filename}")
         self.win.grab_set()
 
         # 파일 설정 로딩
         self._load_file_config()
-        
-        # CSV 파일에서 초기치 읽기
-        self.initial_values = self._read_initial_values()
+        self.is_nb = bool(self.file_cfg.get("__nb_mode__"))
+        title_kind = "Neo Blast 로거 설정" if self.is_nb else "채널 설정"
+        self.win.title(f"{title_kind} - {company}/{site}/{folder}/{filename}")
+
+        # CSV 파일에서 초기치 읽기 (일반 로거만)
+        self.initial_values = {} if self.is_nb else self._read_initial_values()
 
         # UI 생성
         self._build_ui()
@@ -135,6 +137,10 @@ class ChannelSettingsUI:
         file_cfg.setdefault("__gen_interval__", 0)
         file_cfg.setdefault("__align_60__", False)
         file_cfg.setdefault("__note__", "")  # 파일별 비고
+        file_cfg.setdefault("__nb_mode__", False)
+        file_cfg.setdefault("__nb_source_dir__", "")
+        file_cfg.setdefault("__nb_kine_limit__", "")
+        file_cfg.setdefault("__nb_pvs_limit__", "")
 
         final_cfg = deepcopy(file_cfg)
 
@@ -341,9 +347,10 @@ class ChannelSettingsUI:
         header.pack_propagate(False)
         
         title_text = f"{self.company} / {self.site} / {self.folder} / {self.filename}"
+        header_label = "Neo Blast 로거 설정" if self.is_nb else "채널 설정"
         tk.Label(
             header,
-            text="채널 설정",
+            text=header_label,
             font=("맑은 고딕", 12, "bold"),
             bg="#2C3E50",
             fg="white"
@@ -364,6 +371,133 @@ class ChannelSettingsUI:
         frame = tk.Frame(content, bg="white")
         frame.pack(fill="both", expand=True)
 
+        if self.is_nb:
+            self._build_nb_options(frame)
+        else:
+            self._build_global_options(frame)
+            self._build_note_section(frame, row=2)
+            self._build_channel_grid(frame)
+
+        if self.is_nb:
+            self._build_note_section(frame, row=2)
+
+        # ---------------- 버튼 영역 ----------------
+        self._build_footer_buttons(main)
+
+    def _build_nb_options(self, frame):
+        """Neo Blast: 원본 경로 + Kine 한도(비율 보정)."""
+        info = ttk.LabelFrame(frame, text="Neo Blast", padding=12)
+        info.grid(row=0, column=0, columnspan=8, sticky="ew", pady=(0, 12))
+
+        src = str(self.file_cfg.get("__nb_source_dir__", "") or "")
+        tk.Label(
+            info,
+            text="원본 폴더:",
+            font=("맑은 고딕", 9),
+            bg="white",
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8), pady=4)
+        tk.Label(
+            info,
+            text=src or "(없음)",
+            font=("맑은 고딕", 9),
+            fg="#2C3E50",
+            bg="white",
+            wraplength=520,
+            justify="left",
+        ).grid(row=0, column=1, columnspan=3, sticky="w", pady=4)
+
+        tk.Label(
+            info,
+            text=".blast/.txt 추출 시 X·Y·Z로 PVS를 계산하고, 한도 초과 시 세 축을 같은 비율로 줄입니다.",
+            font=("맑은 고딕", 8),
+            fg="#7F8C8D",
+            bg="white",
+            wraplength=560,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=4, sticky="w", pady=(4, 8))
+
+        # 기존: kine 우선, 없으면 pvs→kine 환산 표시
+        kine_val = self.file_cfg.get("__nb_kine_limit__", "")
+        pvs_val = self.file_cfg.get("__nb_pvs_limit__", "")
+        display_kine = ""
+        enabled = False
+        try:
+            if kine_val not in ("", None):
+                display_kine = f"{float(kine_val):g}"
+                enabled = float(kine_val) > 0
+            elif pvs_val not in ("", None) and float(pvs_val) > 0:
+                display_kine = f"{float(pvs_val) * 0.1:g}"
+                enabled = True
+        except (TypeError, ValueError):
+            display_kine = str(kine_val or "")
+
+        self.nb_limit_enabled_var = tk.BooleanVar(value=enabled)
+        ttk.Checkbutton(
+            info,
+            text="한도 비율 보정 사용",
+            variable=self.nb_limit_enabled_var,
+            command=self._sync_nb_limit_widgets,
+        ).grid(row=2, column=0, columnspan=4, sticky="w", pady=(0, 6))
+
+        tk.Label(
+            info,
+            text="Kine 한도:",
+            font=("맑은 고딕", 9),
+            bg="white",
+        ).grid(row=3, column=0, sticky="w", padx=(0, 8), pady=4)
+
+        self.nb_kine_limit_var = tk.StringVar(value=display_kine or "0.20")
+        self.nb_kine_combo = ttk.Combobox(
+            info,
+            textvariable=self.nb_kine_limit_var,
+            values=["0.20", "0.25", "0.30"],
+            width=10,
+            font=("맑은 고딕", 9),
+        )
+        self.nb_kine_combo.grid(row=3, column=1, sticky="w", pady=4)
+
+        tk.Label(
+            info,
+            text="(예: 0.20 / 0.25 · PVS 한도 = Kine ÷ 0.1)",
+            font=("맑은 고딕", 8),
+            fg="#7F8C8D",
+            bg="white",
+        ).grid(row=3, column=2, columnspan=2, sticky="w", padx=(8, 0), pady=4)
+
+        # 로거 번호
+        tk.Label(
+            info,
+            text="로거 번호:",
+            font=("맑은 고딕", 9),
+            bg="white",
+        ).grid(row=4, column=0, sticky="w", padx=(0, 8), pady=(10, 4))
+        self.logger_number_var = tk.StringVar(
+            value=str(self.file_cfg.get("__logger_number__", "") or "")
+        )
+        tk.Entry(
+            info,
+            textvariable=self.logger_number_var,
+            width=10,
+            font=("맑은 고딕", 9),
+            bg="white",
+        ).grid(row=4, column=1, sticky="w", pady=(10, 4))
+        tk.Label(
+            info,
+            text="(트리뷰 정렬용)",
+            font=("맑은 고딕", 8),
+            fg="#7F8C8D",
+            bg="white",
+        ).grid(row=4, column=2, sticky="w", padx=(8, 0), pady=(10, 4))
+
+        self._sync_nb_limit_widgets()
+
+    def _sync_nb_limit_widgets(self):
+        if not getattr(self, "nb_kine_combo", None):
+            return
+        state = "normal" if self.nb_limit_enabled_var.get() else "disabled"
+        self.nb_kine_combo.configure(state=state)
+
+    def _build_global_options(self, frame):
         # ---------------- 전역 옵션 ----------------
         opt_frame = ttk.LabelFrame(
             frame, 
@@ -494,13 +628,14 @@ class ChannelSettingsUI:
             bg="white"
         ).grid(row=0, column=7, padx=(5, 0), pady=5, sticky="w")
 
+    def _build_note_section(self, frame, row=2):
         # ---------------- 비고 (파일별) ----------------
         note_frame = ttk.LabelFrame(
             frame, 
             text="비고", 
             padding=10
         )
-        note_frame.grid(row=2, column=0, columnspan=8, sticky="ew", pady=(0, 15))
+        note_frame.grid(row=row, column=0, columnspan=8, sticky="ew", pady=(0, 15))
         
         file_note = self.file_cfg.get("__note__", "")
         note_entry = tk.Text(
@@ -519,6 +654,7 @@ class ChannelSettingsUI:
         # 참조를 저장하기 위해 인스턴스 변수로 저장
         self.note_text_widget = note_entry
 
+    def _build_channel_grid(self, frame):
         # ---------------- 채널 설정 헤더 ----------------
         # 헤더 정의 및 컬럼 너비 설정
         headers = ["채널", "모드", "base", "scale", "변환후+", "소수점", "센서명(label)", "초기치"]
@@ -696,6 +832,7 @@ class ChannelSettingsUI:
                 "label": label_var,
             }
 
+    def _build_footer_buttons(self, main):
         # ---------------- 버튼 영역 ----------------
         btn_frame = tk.Frame(main, bg="#ECF0F1", height=60)
         btn_frame.pack(fill="x", side="bottom")
@@ -704,27 +841,28 @@ class ChannelSettingsUI:
         btn_container = tk.Frame(btn_frame, bg="#ECF0F1")
         btn_container.pack(fill="both", expand=True, padx=15, pady=10)
         
-        # 왼쪽: 메뉴얼 버튼
+        # 왼쪽: 메뉴얼 버튼 (일반 채널만)
         left_btns = tk.Frame(btn_container, bg="#ECF0F1")
         left_btns.pack(side="left")
 
-        manual_btn = tk.Button(
-            left_btns,
-            text="📖 메뉴얼",
-            command=self.show_manual,
-            font=("맑은 고딕", 9),
-            bg="#8E44AD",
-            fg="white",
-            activebackground="#7D3C98",
-            activeforeground="white",
-            relief="flat",
-            width=10,
-            height=1,
-            padx=15,
-            pady=6,
-            cursor="hand2"
-        )
-        manual_btn.pack(side="left")
+        if not self.is_nb:
+            manual_btn = tk.Button(
+                left_btns,
+                text="📖 메뉴얼",
+                command=self.show_manual,
+                font=("맑은 고딕", 9),
+                bg="#8E44AD",
+                fg="white",
+                activebackground="#7D3C98",
+                activeforeground="white",
+                relief="flat",
+                width=10,
+                height=1,
+                padx=15,
+                pady=6,
+                cursor="hand2"
+            )
+            manual_btn.pack(side="left")
 
         tk.Frame(btn_container, bg="#ECF0F1").pack(side="left", fill="x", expand=True)
 
@@ -953,11 +1091,6 @@ class ChannelSettingsUI:
     def _on_save(self):
         new_cfg = dict(self.file_cfg)
 
-        # 전역 옵션 저장
-        new_cfg["__fill_interval__"] = int(self.fill_interval_var.get())
-        new_cfg["__gen_interval__"] = int(self.gen_interval_var.get())
-        new_cfg["__align_60__"] = bool(self.align_60_var.get())
-        
         # 로거 번호 저장
         logger_num_str = self.logger_number_var.get().strip()
         if logger_num_str:
@@ -967,26 +1100,55 @@ class ChannelSettingsUI:
                 new_cfg["__logger_number__"] = ""
         else:
             new_cfg["__logger_number__"] = ""
-        
+
         # 비고 저장 (파일별 비고)
         note_text = self.note_text_widget.get("1.0", "end-1c").strip()
         new_cfg["__note__"] = note_text
 
-        # ---------------- CH 저장 ----------------
-        for ch in range(8):
-            key = f"CH{ch}"
-            ui = self.ch_vars[key]
+        if self.is_nb:
+            new_cfg["__nb_mode__"] = True
+            src = self.file_cfg.get("__nb_source_dir__", "")
+            if src:
+                new_cfg["__nb_source_dir__"] = src
 
-            # initial 값은 절대 덮어쓰면 안됨 — 기존 값 유지
-            new_cfg[key] = {
-                "mode": ui["mode"].get().strip(),
-                "base": ui["base"].get().strip(),
-                "scale": ui["scale"].get().strip(),
-                "post_offset": ui["post_offset"].get().strip(),
-                "decimal": ui["decimal"].get().strip(),
-                "label": ui["label"].get().strip(),
-                "initial": self.file_cfg[key].get("initial", ""),
-            }
+            if self.nb_limit_enabled_var.get():
+                raw = (self.nb_kine_limit_var.get() or "").strip()
+                try:
+                    kine = float(raw)
+                    if kine <= 0:
+                        raise ValueError("한도는 0보다 커야 합니다.")
+                    new_cfg["__nb_kine_limit__"] = kine
+                    new_cfg.pop("__nb_pvs_limit__", None)
+                except ValueError:
+                    messagebox.showerror(
+                        "입력 오류",
+                        "Kine 한도를 숫자로 입력하세요.\n예: 0.20 또는 0.25",
+                    )
+                    return
+            else:
+                new_cfg.pop("__nb_kine_limit__", None)
+                new_cfg.pop("__nb_pvs_limit__", None)
+        else:
+            # 전역 옵션 저장
+            new_cfg["__fill_interval__"] = int(self.fill_interval_var.get())
+            new_cfg["__gen_interval__"] = int(self.gen_interval_var.get())
+            new_cfg["__align_60__"] = bool(self.align_60_var.get())
+
+            # ---------------- CH 저장 ----------------
+            for ch in range(8):
+                key = f"CH{ch}"
+                ui = self.ch_vars[key]
+
+                # initial 값은 절대 덮어쓰면 안됨 — 기존 값 유지
+                new_cfg[key] = {
+                    "mode": ui["mode"].get().strip(),
+                    "base": ui["base"].get().strip(),
+                    "scale": ui["scale"].get().strip(),
+                    "post_offset": ui["post_offset"].get().strip(),
+                    "decimal": ui["decimal"].get().strip(),
+                    "label": ui["label"].get().strip(),
+                    "initial": self.file_cfg[key].get("initial", ""),
+                }
 
         try:
             self.controller.tree.set_file_config(

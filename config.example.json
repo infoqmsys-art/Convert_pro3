@@ -29,12 +29,17 @@
                         "decimal": "2",
                         "label": "센서 레이블",
                         "initial": ""
-                    }
+                    },
+                    "__align_60__": false
                 }
             }
         }
     },
     "__scheduler__": {
-        "auto_convert_minutes": [5, 25, 45]
+        "auto_convert_minutes": [
+            5,
+            25,
+            45
+        ]
     }
 }

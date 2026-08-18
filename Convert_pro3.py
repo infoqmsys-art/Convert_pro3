@@ -489,10 +489,17 @@ class ConvertPro3App:
         file_cfg["__nb_mode__"] = True
         file_cfg["__nb_source_dir__"] = folder_path
         file_cfg["__note__"] = "Neo Blast"
+        # 한도는 등록 후 파일 더블클릭 → 로거 설정에서 지정 (__nb_kine_limit__)
         self.config.save()
 
         out_path = self.get_convert_path(company, site, folder_name, master_name)
-        stats = sync_neo_blast_folder(folder_path, out_path, logger=self.logger)
+        stats = sync_neo_blast_folder(
+            folder_path,
+            out_path,
+            logger=self.logger,
+            pvs_limit=file_cfg.get("__nb_pvs_limit__"),
+            kine_limit=file_cfg.get("__nb_kine_limit__"),
+        )
 
         msg = (
             f"NB 로거 등록 완료\n"

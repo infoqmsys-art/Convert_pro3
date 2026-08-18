@@ -168,7 +168,7 @@ class FileProcessor:
             return "skipped"
 
         # ⚙ 변환본 경로: {convert_root}/{company}/{folder}/{filename} (로거 폴더)
-        from utils.convert_paths import prepare_convert_out_path
+        from convert_engine.paths import prepare_convert_out_path
 
         out_path = prepare_convert_out_path(
             self.convert_root, company, site, folder, filename, logger=self.logger
@@ -208,8 +208,8 @@ class FileProcessor:
         # 원본 전체 scan / 센서 파이프라인 생략. peek로 내용만 확인 후
         # 필요하면 슬롯 채움만 수행.
         if mtime_unchanged and interval_int > 0:
-            from utils.csv_last_row import peek_last_timestamp
-            from core.fill_interval_processor import _slot_ts
+            from convert_engine.io.csv_last_row import peek_last_timestamp
+            from convert_engine.fill.interval import _slot_ts
 
             base_time, last_row = self._get_last_converted_data(out_path)
             src_last = peek_last_timestamp(src_path)
@@ -673,7 +673,7 @@ class FileProcessor:
         (파일 끝이 아니라 timestamp 최대값 기준 — 순서 꼬임/중복 시에도 올바른 base_time)
         Returns: (timestamp, last_row_data_dict) 또는 (None, None)
         """
-        from utils.csv_last_row import read_max_timestamp_row
+        from convert_engine.io.csv_last_row import read_max_timestamp_row
 
         if not os.path.exists(out_path):
             self.logger.log("[INFO] 변환본 파일 없음 (최초 변환)", level="DEBUG")
@@ -707,7 +707,7 @@ class FileProcessor:
         - 창이 과대해지거나 비정상이면 전체 scan 폴백
         """
         from datetime import datetime
-        from utils.csv_last_row import peek_last_timestamp
+        from convert_engine.io.csv_last_row import peek_last_timestamp
 
         if not os.path.exists(src_path):
             return []
@@ -879,7 +879,7 @@ class FileProcessor:
 
     def _convert_neo_blast_file(self, company, site, folder, filename, folder_cfg, file_cfg):
         """Neo Blast (.blast/.txt) 폴더 → 마스터 CSV 동기화."""
-        from core.neo_blast_processor import sync_neo_blast_folder
+        from convert_engine.pipeline.neo_blast import sync_neo_blast_folder
 
         source_dir = (file_cfg.get("__nb_source_dir__") or folder_cfg.get("__absolute_path__") or "").strip()
         if not source_dir or not os.path.isdir(source_dir):
@@ -889,7 +889,7 @@ class FileProcessor:
             )
             return "skipped"
 
-        from utils.convert_paths import prepare_convert_out_path
+        from convert_engine.paths import prepare_convert_out_path
 
         out_path = prepare_convert_out_path(
             self.convert_root, company, site, folder, filename, logger=self.logger
@@ -1046,7 +1046,7 @@ class FileProcessor:
         센서·누락보충은 10분 파일에만 적용 — _60은 그 결과를 정렬한 사본.
         """
         try:
-            from utils.convert_paths import prepare_align60_out_path
+            from convert_engine.paths import prepare_align60_out_path
 
             out_path_60 = prepare_align60_out_path(
                 self.convert_root, company, site, folder, filename, logger=self.logger
