@@ -26,7 +26,7 @@ SensorProcessor (Convert Pro 3) - Column-based Engine
   DY_V       전압형 가라 — 0.001 단위 이산값, base 중심·완만 하강 drift
   CHANG_SM   시간대별 분포
   CHANG_SM2  0-based 8번 행·채널 열 셀 × base(배율) → 열 전체 동일값
-  EL_TAEAM / EL_STATION / EL_TUNNEL  base + 노이즈
+  EL_TAEAM / EL_STATION / EL_TUNNEL / EL_NEW  base + 노이즈
   CR / CR_TAEAM        BASE에 미세 노이즈만 살짝 쌓인 것처럼(균열계 가라)
   FM                   유량 누적 (carry 이어감)
   RA                   침하 누적
@@ -91,6 +91,7 @@ MODE_META = {
     "CHANG_SM2":  {"use_base": True,  "use_scale": False, "ref": True,  "desc": "CHANG_SM2: 8번 행(인덱스8)·채널열 × base"},
     "EL_TAEAM":   {"use_base": True,  "use_scale": True,  "ref": False, "desc": "EL_TAEAM 가라 (base + 정규분포)"},
     "EL_LOW":     {"use_base": True,  "use_scale": True,  "ref": False, "desc": "저노이즈 경사 가라 (scale=노이즈 배율, 기본 1=과거 고정 진폭과 동일)"},
+    "EL_NEW":     {"use_base": True,  "use_scale": True,  "ref": False, "desc": "EL_NEW: sticky×이중곱 노이즈(±0.0001~0.0003) + 버스트 drift≤0.0015, 절대≤0.004"},
     "EL_STATION": {"use_base": True,  "use_scale": False, "ref": False, "desc": "정거장 경사 가라 (base + noise + drift)"},
     "EL_TUNNEL":  {"use_base": True,  "use_scale": False, "ref": False, "desc": "터널 경사 가라 (EL_STATION과 동일)"},
     "CR":         {"use_base": True,  "use_scale": False, "ref": False, "desc": "균열계 가라 (BASE 주변 미세 노이즈가 살짝 누적)"},
@@ -1478,6 +1479,102 @@ class SensorProcessor:
         # 배치마다 offset을 더하면 증분 변환 시 오프셋이 잘못 쌓여 위로 기어올라가는 버그 발생
         # -------------------------
         return pd.Series(base + noise + drift, index=df.index, dtype=float)
+
+    def generate_EL_NEW(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
+        """
+        EL_NEW: base + sticky noise + irregular real-like drift.
+
+        - Interval-independent. No regular up/down/up/down.
+        - Noise: mostly hold previous level; rare (u1*u2)*(u3*u4) kick in +/-0.0001~0.0003.
+        - Drift: long flat, occasional same-direction short bursts (real sensor feel). Cap +/-0.0015.
+        - Hard cap +/-0.004. scale = multiplier (default 1).
+        """
+        base = self._resolve_base(df, cfg)
+        if isinstance(base, pd.Series):
+            base = float(base.iloc[0])
+        else:
+            base = float(base)
+
+        NOISE_MIN = 0.0001
+        NOISE_MAX = 0.0003
+        DRIFT_STEP_MAX = 0.00003
+        DRIFT_CAP = 0.0015
+        HARD_CAP = 0.004
+        MOVE_PROB = 0.12
+        DRIFT_START_PROB = 0.003
+
+        noise_scale = self._resolve_scale(cfg, default=1.0)
+        try:
+            if noise_scale is None or (
+                isinstance(noise_scale, str) and not str(noise_scale).strip()
+            ):
+                ns = 1.0
+            else:
+                ns = float(noise_scale)
+        except Exception:
+            ns = 1.0
+        if not np.isfinite(ns) or ns < 0.0:
+            ns = 1.0
+
+        nmin = NOISE_MIN * ns
+        nmax = NOISE_MAX * ns
+        dstep_max = DRIFT_STEP_MAX * ns
+        dcap = min(DRIFT_CAP * ns, HARD_CAP)
+
+        n = len(df)
+        rng = np.random.default_rng()
+
+        def _double_product_kick(lo: float, hi: float) -> float:
+            """(u1*u2)*(u3*u4) — peaked at 0, occasional lo~hi magnitude."""
+            raw = (
+                rng.uniform(-1.0, 1.0) * rng.uniform(-1.0, 1.0)
+            ) * (
+                rng.uniform(-1.0, 1.0) * rng.uniform(-1.0, 1.0)
+            )
+            mag = abs(raw) * hi
+            if mag < lo * 0.35:
+                return 0.0
+            mag = float(np.clip(mag, lo, hi))
+            return mag if raw >= 0.0 else -mag
+
+        # sticky noise: hold level; change only on rare kicks (avoids zig-zag)
+        jitter = np.zeros(n, dtype=float)
+        cur = 0.0
+        for i in range(n):
+            if rng.random() < MOVE_PROB:
+                kick = _double_product_kick(nmin, nmax)
+                if kick != 0.0:
+                    cur = kick
+            jitter[i] = cur
+
+        # drift: long idle + short same-direction bursts
+        drift = np.zeros(n, dtype=float)
+        d = 0.0
+        direction = 0
+        burst_left = 0
+        for i in range(n):
+            if burst_left > 0:
+                if rng.random() < 0.45:
+                    step = abs(
+                        rng.uniform(-1.0, 1.0) * rng.uniform(-1.0, 1.0)
+                    ) * dstep_max
+                    if step > 1e-12:
+                        d = float(np.clip(d + direction * step, -dcap, dcap))
+                burst_left -= 1
+                if burst_left == 0 and rng.random() < 0.25:
+                    direction = 0
+            elif rng.random() < DRIFT_START_PROB:
+                direction = 1 if rng.random() < 0.5 else -1
+                burst_left = int(rng.integers(3, 12))
+                step = abs(
+                    rng.uniform(-1.0, 1.0) * rng.uniform(-1.0, 1.0)
+                ) * dstep_max
+                if step > 1e-12:
+                    d = float(np.clip(d + direction * step, -dcap, dcap))
+            drift[i] = d
+
+        delta = np.clip(jitter + drift, -HARD_CAP, HARD_CAP)
+        return pd.Series(base + delta, index=df.index, dtype=float)
 
     def generate_EL_STATION(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
         """
