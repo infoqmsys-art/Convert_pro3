@@ -77,6 +77,7 @@ MODE_META = {
     "NZADD":      {"use_base": True,  "use_scale": False, "ref": True,  "desc": "참조열 인덱스 base; 0→0 출력, 비0면 +uniform(rand_min,rand_max)"},
     # ── 원본미참조 ────────────────────────────────────────────────
     "V":          {"use_base": True,  "use_scale": True,  "ref": False, "desc": "전압형 가라 (base ± 랜덤)"},
+    "V_2":        {"use_base": True,  "use_scale": False, "ref": False, "desc": "전압형 가라 V_2 (약 30% 정지, 나머지 자글자글 노이즈)"},
     "BASE_RAND":  {"use_base": True,  "use_scale": True,  "ref": False, "desc": "참조컬럼 + scale 랜덤"},
     "NM":         {"use_base": True,  "use_scale": True,  "ref": False, "desc": "노이즈 가라 (base ± uniform)"},
     "DO_VM":      {"use_base": True,  "use_scale": True,  "ref": False, "desc": "용존산소형 가라 (BASE ± 균등, scale 기본 0.0045)"},
@@ -858,6 +859,51 @@ class SensorProcessor:
         values = np.maximum(values, 0.0)
 
         return pd.Series(values, index=df.index)
+
+    def generate_V_2(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
+        """
+        V_2 (전압형 가라, V 기반·확률만 조정)
+
+        - 약 30% : base 그대로 (노이즈 0)
+        - 약 45% : ±0.0001
+        - 약 22% : ±0.0002 ~ ±0.0003
+        - 약 3%  : ±0.0005
+        - 음수 방지
+        """
+        base = self._resolve_base(df, cfg)
+        if isinstance(base, pd.Series):
+            base = float(base.iloc[0])
+        else:
+            base = float(base)
+
+        n = len(df)
+        rng = np.random.default_rng()
+
+        r = rng.random(n)
+        noise = np.zeros(n, dtype=float)
+
+        # 3% : ±0.0005
+        m_big = r < 0.03
+        noise[m_big] = rng.choice([-0.0005, 0.0005], size=int(m_big.sum()))
+
+        # 22% : ±0.0002 ~ ±0.0003
+        m_mid = (r >= 0.03) & (r < 0.25)
+        noise[m_mid] = rng.choice(
+            [-0.0003, -0.0002, 0.0002, 0.0003],
+            size=int(m_mid.sum()),
+        )
+
+        # 45% : ±0.0001
+        m_small = (r >= 0.25) & (r < 0.70)
+        noise[m_small] = rng.choice(
+            [-0.0001, 0.0001],
+            size=int(m_small.sum()),
+        )
+
+        # 나머지 ~30% : 0 (base 유지)
+
+        values = np.maximum(base + noise, 0.0)
+        return pd.Series(values, index=df.index, dtype=float)
 
     def generate_DY_V(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
         """
