@@ -87,6 +87,7 @@ class FileProcessor:
         self.fill_interval = fill_interval
         self.logger = logger
         self.convert_root = convert_root or r"C:\data\Convertfile"
+        self.skip_monitoring_cache = False
 
     def convert_all(self):
         """전체 파일 변환 (UI/Scheduler 호출) - Site 레벨 포함"""
@@ -279,15 +280,30 @@ class FileProcessor:
         # 1단계: 마지막 변환 시점 확인 + 마지막 행 데이터 추출
         base_time, last_row = self._get_last_converted_data(out_path)
 
-        # 2단계: 변환 대상 행 수집 (base_time 이후 데이터)
-        lines = self._collect_target_lines(src_path, base_time)
+        # 2단계: 변환 대상 수집
+        # 최초 변환(base_time 없음): pandas C 엔진으로 원본 직접 읽기 (라인 스캔 생략)
+        # 증분: 끝 창에서 base_time 이후 행만
+        df = None
+        lines = []
+        if base_time is None:
+            df = self._read_source_csv(src_path)
+            if df is not None and not df.empty:
+                lines = None  # DataFrame 직접 읽기 경로
+        else:
+            lines = self._collect_target_lines(src_path, base_time)
 
         self.logger.log(f"기준 변환 시간: {base_time}", level="DEBUG")
-        self.logger.log(f"변환 대상 행 수: {len(lines)}", level="DEBUG")
+        if lines is None:
+            self.logger.log(
+                f"변환 대상 행 수: {0 if df is None else len(df)} (직접 읽기)",
+                level="DEBUG",
+            )
+        else:
+            self.logger.log(f"변환 대상 행 수: {len(lines)}", level="DEBUG")
 
         # 구간: 변환본 마지막 행 시각(base_time) ~ 변환 시각(현재).
         # 원본 없음(0행) → 이 구간을 주기 채움(누락 처리). 원본 있음 → 아래에서 원본만 매핑·누락보충.
-        if not lines:
+        if df is None and not lines:
             # 진단: base_time이 원본 마지막보다 크면 새 데이터가 없음. 원본의 마지막 시각 확인
             try:
                 with open(src_path, "rb") as f:
@@ -361,15 +377,9 @@ class FileProcessor:
         else:
             self.logger.log(f"⚠️ 변환본 마지막 값 없음 (최초 변환 또는 읽기 실패)", level="DEBUG")
 
-        # 3단계: DataFrame 생성
-        df = pd.read_csv(
-            StringIO("\n".join(lines)),
-            header=None,
-            # 원본이 ',' 뿐 아니라 '\t', ';' 등일 수 있어 자동 감지
-            sep=None,
-            engine="python",
-            on_bad_lines="skip"
-        )
+        # 3단계: DataFrame 생성 (최초 변환은 이미 읽음)
+        if df is None:
+            df = self._dataframe_from_lines(lines)
 
         if df.empty:
             self.logger.log(
@@ -600,6 +610,20 @@ class FileProcessor:
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         if "__filled__" in df.columns:
             df = df.drop(columns=["__filled__"])
+        # 변환본에 이미 있는 마지막 timestamp 행은 저장하지 않음 (append 중복 방지)
+        if base_time is not None and not df.empty:
+            try:
+                _save_ts = pd.to_datetime(df.iloc[:, 0], errors="coerce", format="mixed")
+            except TypeError:
+                _save_ts = pd.to_datetime(df.iloc[:, 0], errors="coerce")
+            df = df.loc[_save_ts.notna() & (_save_ts > pd.Timestamp(base_time))].copy()
+            if df.empty:
+                if align_60 and os.path.exists(out_path):
+                    if self._sync_align60_from_main(
+                        company, site, folder, filename, out_path
+                    ):
+                        return "converted"
+                return "skipped"
         self._save_append(df, out_path, interval_min=0)
 
         if align_60:
@@ -607,12 +631,13 @@ class FileProcessor:
                 company, site, folder, filename, out_path, force=True
             )
 
-        # 모니터링 캐시 업데이트
-        try:
-            from monitoring.data_cache import update_file_cache
-            update_file_cache(company, site, folder, filename, df)
-        except Exception:
-            pass
+        # 모니터링 웹이 꺼져 있으면 JSON 캐시 갱신 생략 (파일마다 전체 rewrite)
+        if not self.skip_monitoring_cache:
+            try:
+                from monitoring.data_cache import update_file_cache
+                update_file_cache(company, site, folder, filename, df)
+            except Exception:
+                pass
 
         tag = "누락보충" if fill_applied else "변환"
         self.logger.log(
@@ -706,6 +731,78 @@ class FileProcessor:
             import traceback
             self.logger.log(f"   상세: {traceback.format_exc()}", level="ERROR")
         return None, None
+
+    def _read_source_csv(self, src_path):
+        """원본 CSV를 DataFrame으로 읽기. 쉼표+C엔진 우선, 실패 시 python 폴백."""
+        if not os.path.exists(src_path) or os.path.getsize(src_path) <= 0:
+            return pd.DataFrame()
+        try:
+            df = pd.read_csv(
+                src_path,
+                header=None,
+                sep=",",
+                engine="c",
+                on_bad_lines="skip",
+                encoding="utf-8-sig",
+                encoding_errors="ignore",
+                low_memory=False,
+            )
+            if df is not None and df.shape[1] >= 2:
+                return df
+        except TypeError:
+            try:
+                df = pd.read_csv(
+                    src_path,
+                    header=None,
+                    sep=",",
+                    engine="c",
+                    on_bad_lines="skip",
+                    encoding="utf-8-sig",
+                    low_memory=False,
+                )
+                if df is not None and df.shape[1] >= 2:
+                    return df
+            except Exception:
+                pass
+        except Exception:
+            pass
+        try:
+            return pd.read_csv(
+                src_path,
+                header=None,
+                sep=None,
+                engine="python",
+                on_bad_lines="skip",
+                encoding="utf-8-sig",
+            )
+        except Exception:
+            return pd.DataFrame()
+
+    def _dataframe_from_lines(self, lines):
+        """수집된 CSV 줄 → DataFrame. 쉼표+C엔진 우선."""
+        if not lines:
+            return pd.DataFrame()
+        buf = "\n".join(lines)
+        try:
+            df = pd.read_csv(
+                StringIO(buf),
+                header=None,
+                sep=",",
+                engine="c",
+                on_bad_lines="skip",
+                low_memory=False,
+            )
+            if df is not None and df.shape[1] >= 2:
+                return df
+        except Exception:
+            pass
+        return pd.read_csv(
+            StringIO(buf),
+            header=None,
+            sep=None,
+            engine="python",
+            on_bad_lines="skip",
+        )
 
     def _collect_target_lines(self, src_path, base_time):
         """
@@ -1099,6 +1196,18 @@ class FileProcessor:
                 raise
             self._log_saved_file_state(out_path, context="create", df=df)
             return
+
+        # 원칙 2: 신규 행만 append (전체 재읽기/재쓰기 금지). BOM은 최초 생성 시에만.
+        try:
+            with open(out_path, "a", encoding="utf-8", newline="") as f:
+                df.to_csv(f, index=False, header=False)
+            self._log_saved_file_state(out_path, context="append", df=df)
+            return
+        except PermissionError as e:
+            self.logger.log(f"[ERROR] 변환본 append 실패(권한/점유): {out_path} - {e}", level="ERROR")
+            raise
+        except Exception as e:
+            self.logger.log(f"[WARN] append 실패, 병합 저장 시도: {e}", level="WARN")
 
         # 기존 파일 + 신규 병합 → 시간순 정렬 → 동일 시각(분 단위) 중복 제거 후 저장
         try:

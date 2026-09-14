@@ -1,7 +1,8 @@
 # core/presets.py
 """채널 설정 프리셋.
 
-모드·라벨·소수점 등 공통 골격만 깔고, base는 파일마다 따로 넣는다.
+모드·라벨·소수점·scale 등 공통 골격만 깔고, base는 비운다.
+SET 선택/저장 시 채널 설정 창이 원본 첫 행 초기치를 base에 넣는다.
 """
 from __future__ import annotations
 
@@ -33,13 +34,13 @@ def _slot(
 CHANNEL_PRESETS: dict[str, dict[str, Any]] = {
     "관수구_경사균열": {
         "desc": (
-            "내장 degreeX/Y → EL_NEW, 외장 CH0 → CR(균열), CH1~7 → PASS. "
-            "base는 비워 두었으니 파일별로 입력."
+            "내장 X/Y·CH0 → SET(scale 0.05, 소수점 4). "
+            "원본 정리 후 적용하면 초기치가 base에 들어감. CH1~7은 PASS."
         ),
         "slots": {
-            "degreeX": _slot("EL_NEW", label="내장ELX", decimal="4"),
-            "degreeY": _slot("EL_NEW", label="내장ELY", decimal="4"),
-            "CH0": _slot("CR", label="균열", decimal="4"),
+            "degreeX": _slot("SET", label="내장ELX", decimal="4", scale="0.05"),
+            "degreeY": _slot("SET", label="내장ELY", decimal="4", scale="0.05"),
+            "CH0": _slot("SET", label="균열", decimal="4", scale="0.05"),
             "CH1": _slot("PASS"),
             "CH2": _slot("PASS"),
             "CH3": _slot("PASS"),

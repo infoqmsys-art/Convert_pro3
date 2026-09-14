@@ -181,7 +181,8 @@ class ConvertPro3App:
         self.is_converting = False  # 변환 중 상태 플래그
         self.convert_stop_requested = False  # 변환 중지 요청 플래그
         self.convert_lock = threading.Lock()  # 로그 출력용 락
-        self.max_workers = 4  # 동시 변환 스레드 수
+        # CSV 읽기/쓰기는 I/O 위주 — CPU 코어보다 조금 더 열어 120개 파일을 빨리 소화
+        self.max_workers = min(16, max(8, os.cpu_count() or 8))
         self.open_settings_windows = {}  # 열린 센서 설정 창 추적 {파일키: 창}
         self._last_trim_cutoff = self._load_last_trim_cutoff()  # 변환본 시간 이후 삭제 마지막 사용값
 
@@ -220,6 +221,7 @@ class ConvertPro3App:
             logger=self.logger,
             convert_root=r"C:\data\Convertfile"
         )
+        self.file_processor.skip_monitoring_cache = not ENABLE_MONITORING_WEB
         
         # =========================
         # BatteryReader
@@ -506,19 +508,30 @@ class ConvertPro3App:
     def refresh_battery_for_files(self, targets):
         """
         targets: iterable of (company, site, folder, filename)
+        변환본 끝행만 읽음. 다건이면 병렬.
         """
-        for company, site, folder, filename in targets:
+        items = list(targets)
+        if not items:
+            return
+
+        def _read(item):
+            company, site, folder, filename = item
             path = self.get_convert_path(company, site, folder, filename)
-            batt = self.battery_reader.read_last_battery(path)
+            return item, self.battery_reader.read_last_battery(path)
 
-            key = (company, site, folder, filename)
-            self.battery_cache[key] = batt
-
-            self._ui_call(
-                self.ui.update_battery,
-                company, site, folder, filename,
-                self.format_battery(batt)
-            )
+        workers = min(8, max(1, len(items)))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for fut in as_completed([ex.submit(_read, it) for it in items]):
+                try:
+                    (company, site, folder, filename), batt = fut.result()
+                except Exception:
+                    continue
+                self.battery_cache[(company, site, folder, filename)] = batt
+                self._ui_call(
+                    self.ui.update_battery,
+                    company, site, folder, filename,
+                    self.format_battery(batt),
+                )
 
     def refresh_all_battery_cache(self):
         self.refresh_battery_for_files(self.iter_config_files())
@@ -526,6 +539,18 @@ class ConvertPro3App:
     # ======================================================
     # 변환 요청
     # ======================================================
+    def _skip_unconfigured_file(self, company, site, filename_cfg) -> bool:
+        """현장 플래그가 켜져 있고 센서 모드가 전부 PASS면 변환 대상에서 제외."""
+        site_cfg = self.config.data.get(company, {}).get(site, {})
+        if not isinstance(site_cfg, dict) or not site_cfg.get("__require_sensor_config__"):
+            return False
+        if not isinstance(filename_cfg, dict):
+            return True
+        if filename_cfg.get("__nb_mode__"):
+            return False
+        from core.sensor_processor import file_has_sensor_setup
+        return not file_has_sensor_setup(filename_cfg)
+
     def convert_now(self):
         if self.is_converting:
             self.logger.log("이미 변환 작업이 진행 중입니다.", level="WARNING")
@@ -543,10 +568,85 @@ class ConvertPro3App:
         self._ui_call(self.ui.update_status, "변환 중지 중...", None)
         self.logger.log("변환 중지", level="INFO")
 
+    def _run_pool_convert(self, to_run, skipped=0, status_prefix="변환"):
+        """파일 목록을 워커 풀로 변환. (converted, skipped, fill_applied, errors, converted_targets, completed)."""
+        converted = 0
+        fill_applied = 0
+        errors = []
+        completed_count = 0
+        converted_targets = []
+        if not to_run:
+            return converted, skipped, fill_applied, errors, converted_targets, 0
+
+        last_status_at = 0.0
+        work_total = len(to_run)
+        executor = ThreadPoolExecutor(max_workers=self.max_workers)
+        future_to_file = {}
+        try:
+            for company, site, folder, filename in to_run:
+                if self.convert_stop_requested:
+                    break
+                fut = executor.submit(
+                    self._convert_single_file_safe,
+                    company, site, folder, filename,
+                )
+                future_to_file[fut] = (company, site, folder, filename)
+
+            for future in as_completed(future_to_file):
+                company, site, folder, filename = future_to_file[future]
+                completed_count += 1
+
+                try:
+                    if future.cancelled():
+                        skipped += 1
+                    else:
+                        result = future.result()
+                        if result == "converted":
+                            converted += 1
+                            converted_targets.append((company, site, folder, filename))
+                        elif result == "fill":
+                            converted += 1
+                            fill_applied += 1
+                            converted_targets.append((company, site, folder, filename))
+                        elif result == "error":
+                            errors.append((company, site, folder, filename))
+                        else:
+                            skipped += 1
+                except Exception as e:
+                    errors.append((company, site, folder, filename))
+                    self._thread_safe_log(
+                        f"변환 오류: {company}/{site}/{folder}/{filename} - {e}",
+                        level="ERROR"
+                    )
+
+                now_ts = time.time()
+                if now_ts - last_status_at >= 0.25 or completed_count == work_total:
+                    last_status_at = now_ts
+                    if self.convert_stop_requested:
+                        status_msg = f"{status_prefix} 중지 중... {completed_count}/{work_total}"
+                    else:
+                        status_msg = f"{status_prefix} 중... {completed_count}/{work_total}"
+                    self._ui_call(
+                        self.ui.update_status,
+                        status_msg,
+                        completed_count / work_total if work_total else 1.0,
+                    )
+
+                if self.convert_stop_requested:
+                    for f in future_to_file:
+                        if not f.done():
+                            f.cancel()
+                    break
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
+
+        return converted, skipped, fill_applied, errors, converted_targets, completed_count
+
     def _thread_convert(self):
         """멀티스레딩 변환 (ThreadPoolExecutor 사용)"""
         try:
             self.is_converting = True
+            self.logger.skip_debug_file = True
             self._ui_call(self.ui.set_buttons_enabled, False)
 
             start = datetime.now()
@@ -556,7 +656,7 @@ class ConvertPro3App:
             total = len(all_files)
 
             self._thread_safe_log(
-                f"{APP_FULL_NAME} 변환 시작 (파일 {total}개)",
+                f"{APP_FULL_NAME} 변환 시작 (파일 {total}개, 동시 {self.max_workers})",
                 level="INFO"
             )
 
@@ -565,78 +665,43 @@ class ConvertPro3App:
                 self._ui_call(self.ui.update_status, "변환할 파일 없음", 1.0)
                 return
 
-            converted = 0
+            to_run = []
             skipped = 0
-            fill_applied = 0
-            errors = []
-            completed_count = 0
-            converted_targets = []
-            last_status_at = 0.0
+            cfg = self.config.data
+            for company, site, folder, filename in all_files:
+                folder_dict = (
+                    cfg.get(company, {}).get(site, {}).get(folder, {})
+                    if isinstance(cfg.get(company, {}).get(site, {}), dict)
+                    else {}
+                )
+                file_cfg = folder_dict.get(filename, {}) if isinstance(folder_dict, dict) else {}
+                if self._skip_unconfigured_file(company, site, file_cfg):
+                    skipped += 1
+                    continue
+                to_run.append((company, site, folder, filename))
 
-            executor = ThreadPoolExecutor(max_workers=self.max_workers)
-            future_to_file = {}
-            try:
-                for company, site, folder, filename in all_files:
-                    if self.convert_stop_requested:
-                        break
-                    fut = executor.submit(
-                        self._convert_single_file_safe,
-                        company, site, folder, filename,
-                    )
-                    future_to_file[fut] = (company, site, folder, filename)
+            if skipped:
+                self._thread_safe_log(
+                    f"센서 미설정 {skipped}개 즉시 스킵 (변환 대상 {len(to_run)}개)",
+                    level="INFO",
+                )
 
-                for future in as_completed(future_to_file):
-                    company, site, folder, filename = future_to_file[future]
-                    completed_count += 1
+            if not to_run:
+                self._thread_safe_log(
+                    f"변환 완료: 변환 0 / 스킵 {skipped} / 오류 0",
+                    level="INFO",
+                )
+                self._ui_call(self.ui.update_status, "변환 완료", 1.0)
+                return
 
-                    try:
-                        if future.cancelled():
-                            skipped += 1
-                        else:
-                            result = future.result()
-                            if result == "converted":
-                                converted += 1
-                                converted_targets.append((company, site, folder, filename))
-                            elif result == "fill":
-                                converted += 1
-                                fill_applied += 1
-                                converted_targets.append((company, site, folder, filename))
-                            elif result == "error":
-                                errors.append((company, site, folder, filename))
-                            else:
-                                skipped += 1
-                    except Exception as e:
-                        errors.append((company, site, folder, filename))
-                        self._thread_safe_log(
-                            f"변환 오류: {company}/{site}/{folder}/{filename} - {e}",
-                            level="ERROR"
-                        )
-
-                    now_ts = time.time()
-                    if now_ts - last_status_at >= 0.25 or completed_count == total:
-                        last_status_at = now_ts
-                        if self.convert_stop_requested:
-                            status_msg = f"변환 중지 중... {completed_count}/{total}"
-                        else:
-                            status_msg = f"변환 중... {completed_count}/{total}"
-                        self._ui_call(
-                            self.ui.update_status,
-                            status_msg,
-                            completed_count / total if total else 1.0,
-                        )
-
-                    if self.convert_stop_requested:
-                        for f in future_to_file:
-                            if not f.done():
-                                f.cancel()
-                        break
-            finally:
-                # 대기열 취소 후, 이미 실행 중인 worker만 대기 (전체 대기열 대기 방지)
-                executor.shutdown(wait=True, cancel_futures=True)
+            converted, skipped, fill_applied, errors, converted_targets, completed_count = (
+                self._run_pool_convert(to_run, skipped)
+            )
+            work_total = len(to_run)
 
             elapsed = (datetime.now() - start).seconds
             if self.convert_stop_requested:
-                remaining = max(0, total - completed_count)
+                remaining = max(0, work_total - completed_count)
                 self._thread_safe_log(
                     f"변환 중지: 변환 {converted} / 스킵 {skipped} / 오류 {len(errors)} "
                     f"(미처리 {remaining}, {elapsed}s)",
@@ -659,14 +724,8 @@ class ConvertPro3App:
             status_end = "변환 중지됨" if self.convert_stop_requested else "변환 완료"
             self._ui_call(self.ui.update_status, status_end, 1.0)
 
-            # 중지 시 전체 배터리 갱신은 UI 렉의 주원인 → 실제 변환된 것만
-            refresh_list = (
-                converted_targets
-                if self.convert_stop_requested
-                else all_files
-            )
-            if refresh_list:
-                self.refresh_battery_for_files(refresh_list)
+            if converted_targets:
+                self.refresh_battery_for_files(converted_targets)
             self._log_memory("convert_all_end")
 
         except Exception as e:
@@ -682,6 +741,7 @@ class ConvertPro3App:
             )
             self._ui_call(self.ui.update_status, f"변환 오류: {error_detail[:50]}", 0)
         finally:
+            self.logger.skip_debug_file = False
             self.is_converting = False
             self._ui_call(self.ui.set_buttons_enabled, True)
 
@@ -720,48 +780,40 @@ class ConvertPro3App:
         t.start()
 
     def _thread_convert_folder(self, company, site, folder):
-        """폴더 전체 변환 스레드 (Site 레벨 포함)"""
+        """폴더 전체 변환 스레드 (병렬)"""
         try:
             self.is_converting = True
+            self.logger.skip_debug_file = True
             self._ui_call(self.ui.set_buttons_enabled, False)
             
             start = datetime.now()
 
             self.logger.log(
-                f"폴더 변환 시작: {company}/{site}/{folder}",
+                f"폴더 변환 시작: {company}/{site}/{folder} (동시 {self.max_workers})",
                 level="INFO"
             )
 
-            # 폴더 내 파일 목록 가져오기
             folder_dict = self.config.data.get(company, {}).get(site, {}).get(folder, {})
             files = [f for f in folder_dict.keys() if f.lower().endswith(".csv") and not f.startswith("__")]
-            
-            total = len(files)
-            converted = 0
+
+            to_run = []
             skipped = 0
-            fill_applied = 0
+            for filename in files:
+                file_cfg = folder_dict.get(filename, {}) if isinstance(folder_dict, dict) else {}
+                if self._skip_unconfigured_file(company, site, file_cfg):
+                    skipped += 1
+                    continue
+                to_run.append((company, site, folder, filename))
 
-            for idx, filename in enumerate(files, 1):
-                if self.convert_stop_requested:
-                    break
-
-                # 진행 상태 업데이트
-                progress = idx / total if total > 0 else 0
-                status_msg = f"폴더 변환 중... {idx}/{total} ({filename})"
-                self._ui_call(self.ui.update_status, status_msg, progress)
-
-                result = self.file_processor.convert_file(
-                    company, site, folder, filename,
-                    stop_check=lambda: self.convert_stop_requested,
+            if skipped:
+                self.logger.log(
+                    f"센서 미설정 {skipped}개 즉시 스킵 (변환 대상 {len(to_run)}개)",
+                    level="INFO",
                 )
 
-                if result == "converted":
-                    converted += 1
-                elif result == "fill":
-                    converted += 1
-                    fill_applied += 1
-                else:
-                    skipped += 1
+            converted, skipped, fill_applied, errors, converted_targets, _completed = (
+                self._run_pool_convert(to_run, skipped, status_prefix="폴더 변환")
+            )
 
             elapsed = (datetime.now() - start).seconds
             if self.convert_stop_requested:
@@ -779,8 +831,8 @@ class ConvertPro3App:
 
             status_end = "폴더 변환 중지됨" if self.convert_stop_requested else f"폴더 변환 완료: {folder}"
             self._ui_call(self.ui.update_status, status_end, 1.0)
-            if not self.convert_stop_requested:
-                self.refresh_battery_for_files([(company, site, folder, f) for f in files])
+            if converted_targets:
+                self.refresh_battery_for_files(converted_targets)
 
         except Exception as e:
             self.logger.log(
@@ -789,6 +841,7 @@ class ConvertPro3App:
             )
             self._ui_call(self.ui.update_status, "변환 오류 발생", 0)
         finally:
+            self.logger.skip_debug_file = False
             self.is_converting = False
             self._ui_call(self.ui.set_buttons_enabled, True)
 
@@ -817,48 +870,48 @@ class ConvertPro3App:
     def _thread_convert_batch(self, files_list, label="일괄"):
         try:
             self.is_converting = True
+            self.logger.skip_debug_file = True
             self._ui_call(self.ui.set_buttons_enabled, False)
             start = datetime.now()
-            total = len(files_list)
-            converted = skipped = fill_applied = 0
 
-            self.logger.log(f"{label} 변환 시작: {total}개 파일", level="INFO")
-
-            for idx, (company, site, folder, filename) in enumerate(files_list, 1):
-                if self.convert_stop_requested:
-                    break
-                progress = idx / total if total > 0 else 0
-                self._ui_call(self.ui.update_status,
-                              f"{label} 변환 중... {idx}/{total} ({filename})", progress)
-                result = self.file_processor.convert_file(
-                    company, site, folder, filename,
-                    stop_check=lambda: self.convert_stop_requested,
-                )
-                if result == "converted":
-                    converted += 1
-                elif result == "fill":
-                    converted += 1
-                    fill_applied += 1
-                else:
+            to_run = []
+            skipped = 0
+            for company, site, folder, filename in files_list:
+                folder_dict = self.config.data.get(company, {}).get(site, {}).get(folder, {})
+                file_cfg = folder_dict.get(filename, {}) if isinstance(folder_dict, dict) else {}
+                if self._skip_unconfigured_file(company, site, file_cfg):
                     skipped += 1
+                    continue
+                to_run.append((company, site, folder, filename))
+
+            self.logger.log(
+                f"{label} 변환 시작: {len(files_list)}개 파일 (동시 {self.max_workers})",
+                level="INFO",
+            )
+
+            converted, skipped, fill_applied, errors, converted_targets, _completed = (
+                self._run_pool_convert(to_run, skipped, status_prefix=f"{label} 변환")
+            )
 
             elapsed = (datetime.now() - start).total_seconds()
             fill_info = f", 누락보충 {fill_applied}" if fill_applied else ""
+            err_info = f" / 오류 {len(errors)}" if errors else ""
             if self.convert_stop_requested:
                 msg = (f"{label} 변환 중지: 변환 {converted} / 스킵 {skipped}"
-                       f"{fill_info} ({elapsed:.1f}s)")
+                       f"{fill_info}{err_info} ({elapsed:.1f}s)")
             else:
                 msg = (f"{label} 변환 완료: 변환 {converted} / 스킵 {skipped}"
-                       f"{fill_info} ({elapsed:.1f}s)")
+                       f"{fill_info}{err_info} ({elapsed:.1f}s)")
             self.logger.log(msg, level="INFO")
             self._ui_call(self.ui.update_status, msg, 1.0)
-            if not self.convert_stop_requested:
-                self.refresh_battery_for_files(files_list)
+            if converted_targets:
+                self.refresh_battery_for_files(converted_targets)
 
         except Exception as e:
             self.logger.log(f"{label} 변환 오류: {e}", level="ERROR")
             self._ui_call(self.ui.update_status, "변환 오류 발생", 0)
         finally:
+            self.logger.skip_debug_file = False
             self.is_converting = False
             self._ui_call(self.ui.set_buttons_enabled, True)
 
@@ -879,6 +932,7 @@ class ConvertPro3App:
         """단일 파일 변환 스레드 (Site 레벨 포함)"""
         try:
             self.is_converting = True
+            self.logger.skip_debug_file = True
             self._ui_call(self.ui.set_buttons_enabled, False)
             
             start = datetime.now()
@@ -918,6 +972,7 @@ class ConvertPro3App:
             )
             self._ui_call(self.ui.update_status, "변환 오류 발생", 0)
         finally:
+            self.logger.skip_debug_file = False
             self.is_converting = False
             self._ui_call(self.ui.set_buttons_enabled, True)
 

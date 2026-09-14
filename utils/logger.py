@@ -32,6 +32,8 @@ class Logger:
         self.ui_callback = None
         self.level = level.upper()
         self.lock = Lock()
+        # 대량 변환 중 DEBUG 파일 I/O가 병목이 되므로 일시 생략
+        self.skip_debug_file = False
 
         # 로그 디렉토리
         log_dir = os.path.join(base_dir, "logs")
@@ -61,9 +63,10 @@ class Logger:
         if level not in self.LEVEL_ORDER:
             level = "INFO"
 
-        # DEBUG 등 낮은 레벨 → 파일만 기록
+        # DEBUG 등 낮은 레벨 → 파일만 기록 (대량 변환 중에는 생략)
         if self.LEVEL_ORDER[level] < self.LEVEL_ORDER[self.level]:
-            self._write_file(msg, level)
+            if not self.skip_debug_file:
+                self._write_file(msg, level)
             return
 
         timestamp = self._now()

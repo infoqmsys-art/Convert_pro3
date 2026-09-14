@@ -344,6 +344,29 @@ class ChannelSettingsUI:
         
         return initial_values
 
+    def _initial_for_slot(self, key) -> str:
+        """슬롯 키(degreeX/Y, CH0…)에 해당하는 첫 행 초기치."""
+        if key in ("degreeX", "degreeY"):
+            raw = self.initial_values.get(key, "")
+        elif isinstance(key, str) and key.startswith("CH"):
+            try:
+                raw = self.initial_values.get(int(key[2:]), "")
+            except ValueError:
+                raw = ""
+        else:
+            raw = self.initial_values.get(key, "")
+        return str(raw or "").strip()
+
+    def _fill_set_base_if_empty(self, key, mode, base_var):
+        """SET이고 base가 비었으면 초기치를 한 번 넣는다. 있는 값은 덮지 않음."""
+        if (mode or "").strip().upper() != "SET":
+            return
+        if (base_var.get() or "").strip():
+            return
+        init_val = self._initial_for_slot(key)
+        if init_val:
+            base_var.set(init_val)
+
     def update_param_state(self, mode, base_entry, scale_entry):
         meta = MODE_META.get(mode, MODE_META["PASS"])
 
@@ -768,11 +791,13 @@ class ChannelSettingsUI:
             self.update_param_state(
                 ui["mode"].get(), ui["base_entry"], ui["scale_entry"]
             )
+            self._fill_set_base_if_empty(key, ui["mode"].get(), ui["base"])
 
         messagebox.showinfo(
             "프리셋 적용",
             f"「{name}」을(를) 화면에 반영했습니다.\n"
-            "base는 기존 값이 있으면 유지됩니다. 저장을 눌러야 config에 반영됩니다.",
+            "SET이고 base가 비어 있으면 초기치를 넣습니다. "
+            "저장을 눌러야 config에 반영됩니다.",
         )
 
     def _build_channel_grid(self, frame):
@@ -928,7 +953,7 @@ class ChannelSettingsUI:
         )
 
         on_mode_change = self._make_mode_change_handler(
-            mode_var, base_entry, scale_entry, tooltip
+            key, mode_var, base_var, base_entry, scale_entry, tooltip
         )
         mode_cb.bind("<<ComboboxSelected>>", on_mode_change)
         mode_var.trace_add("write", on_mode_change)
@@ -1229,11 +1254,12 @@ class ChannelSettingsUI:
             cursor="hand2"
         ).pack(pady=10)
 
-    def _make_mode_change_handler(self, mode_var, base_entry, scale_entry, tooltip):
+    def _make_mode_change_handler(self, key, mode_var, base_var, base_entry, scale_entry, tooltip):
         def _handler(*args):
             mode = mode_var.get()
             self.update_param_state(mode, base_entry, scale_entry)
             tooltip.text = MODE_META.get(mode, MODE_META["PASS"])["desc"]
+            self._fill_set_base_if_empty(key, mode, base_var)
         return _handler
 
     # ======================================================
@@ -1288,8 +1314,10 @@ class ChannelSettingsUI:
             # ---------------- 센서 슬롯 저장 (내장 degreeX/Y + 외장 CH0~7) ----------------
             for key in ("degreeX", "degreeY", *[f"CH{ch}" for ch in range(8)]):
                 ui = self.ch_vars[key]
+                mode = ui["mode"].get().strip()
+                self._fill_set_base_if_empty(key, mode, ui["base"])
                 new_cfg[key] = {
-                    "mode": ui["mode"].get().strip(),
+                    "mode": mode,
                     "base": ui["base"].get().strip(),
                     "scale": ui["scale"].get().strip(),
                     "post_offset": ui["post_offset"].get().strip(),
