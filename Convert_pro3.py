@@ -10,7 +10,7 @@ QM 계측 로거의 원본 CSV 파일을 읽어 표준 형식으로 변환·저�
 - 센서 타입별 공학 단위 환산 (SensorProcessor)
 - 누락 구간 자동 보충 (FillIntervalProcessor)
 - 채널·파일 설정 GUI (Tkinter)
-- 모니터링 웹 대시보드 연동 (monitoring/server.py)
+- (옵션) 모니터링 웹 — ENABLE_MONITORING_WEB=True 일 때만 기동
 - 계측관리 통합시스템 연동 (measurement_portal/)
 
 프로젝트 구성
@@ -28,13 +28,14 @@ import sys
 import time
 import tkinter as tk
 import threading
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from version import VERSION, APP_NAME, APP_FULL_NAME
 
 APP_VERSION = VERSION  # 버전은 version.py에서 관리
 
 ENABLE_MEMORY_TRACKING = False  # 프로덕션 24시간 운용 시 비활성화 (런타임_memory.json 누적 방지)
+ENABLE_MONITORING_WEB = False  # False: Convert Pro3에서 Flask 웹 미기동 (직접 실행은 python monitoring/server.py)
 
 from core.config_manager import ConfigManager
 from core.management_manager import ManagementManager
@@ -94,12 +95,13 @@ def _load_monitoring_server():
 
 
 _MONITORING_AVAILABLE = False
-try:
-    _monitoring_server_mod   = _load_monitoring_server()
-    _start_monitoring_server = _monitoring_server_mod.start_server
-    _MONITORING_AVAILABLE = True
-except Exception as e:
-    _MONITORING_FAIL_MSG = str(e)
+if ENABLE_MONITORING_WEB:
+    try:
+        _monitoring_server_mod   = _load_monitoring_server()
+        _start_monitoring_server = _monitoring_server_mod.start_server
+        _MONITORING_AVAILABLE = True
+    except Exception as e:
+        _MONITORING_FAIL_MSG = str(e)
 
 
 def restart_monitoring_web_only(app_instance) -> bool:
@@ -150,21 +152,6 @@ def restart_monitoring_web_only(app_instance) -> bool:
     )
     th.start()
     app_instance._mon_thread = th
-
-    if hasattr(new_mod, "set_category_saved_callback"):
-        def _on_cat_saved():
-            try:
-                mg = getattr(app_instance, "mgmt", None)
-                if mg:
-                    mg.reload()
-                ru = getattr(app_instance, "root", None)
-                ui = getattr(app_instance, "ui", None)
-                if ru and ui and hasattr(ui, "refresh_tree"):
-                    ru.after(0, ui.refresh_tree)
-            except Exception:
-                pass
-
-        new_mod.set_category_saved_callback(_on_cat_saved)
     _log("모니터링 웹만 재시작 완료")
     return True
 
@@ -271,26 +258,13 @@ class ConvertPro3App:
         self.scheduler = SchedulerManager(self, self.logger)
         self.scheduler.start()
 
-        # 모니터링 웹 서버 (daemon 스레드 -> 앱 종료 시 자동 종료)
+        # 모니터링 웹 (기본 꺼짐 — ENABLE_MONITORING_WEB)
         self._mon_thread = None
-        if _MONITORING_AVAILABLE:
+        if ENABLE_MONITORING_WEB and _MONITORING_AVAILABLE:
             self._start_web_server_thread()
-
-            # 웹에서 카테고리 「저장」(save_all 등 일괄 반영) 시에만 콜백 → mgmt 재로드 + 트리 1회 갱신
-            if _monitoring_server_mod and hasattr(_monitoring_server_mod, 'set_category_saved_callback'):
-                def _on_cat_saved():
-                    try:
-                        if hasattr(self, 'mgmt') and self.mgmt:
-                            self.mgmt.reload()
-                        self.root.after(0, self.ui.refresh_tree)
-                    except Exception:
-                        pass
-                _monitoring_server_mod.set_category_saved_callback(_on_cat_saved)
-
-            # monitoring/ 파일 변경 감시 → 자동 알림
             self._start_monitoring_watcher()
 
-        elif _MONITORING_FAIL_MSG:
+        elif ENABLE_MONITORING_WEB and _MONITORING_FAIL_MSG:
             self.logger.log(
                 f'모니터링 웹 비활성화 (Flask 등 미설치): {_MONITORING_FAIL_MSG} → '
                 f'프로그램과 동일한 Python으로: python -m pip install flask',
@@ -518,12 +492,13 @@ class ConvertPro3App:
     # 배터리 포맷 (UI 전용)
     # ======================================================
     def format_battery(self, value):
+        """None/실패 → '—', 숫자(0 포함) → 'xx.xx %'."""
         if value is None or value == "":
-            return "0.00 %"
+            return "—"
         try:
             return f"{float(value):.2f} %"
         except Exception:
-            return "0.00 %"
+            return "—"
 
     # ======================================================
     # 배터리 갱신
@@ -954,6 +929,71 @@ class ConvertPro3App:
         if self.mem_tracker:
             self.mem_tracker.log(stage, extra)
 
+
+    # ======================================================
+    # 원본 정리 (cutoff 이전 행 삭제, 헤더 유지)
+    # ======================================================
+    def trim_source_files(self):
+        """도구 → 원본 정리: CSV 복수 선택 후 지정 시각 이전 행 삭제."""
+        from ui.trim_time_dialog import show_trim_time_dialog, parse_datetime_safe
+
+        initial_dir = r"C:\cat\data\csv"
+        if not os.path.isdir(initial_dir):
+            initial_dir = str(self.base_dir)
+
+        paths = filedialog.askopenfilenames(
+            parent=self.root,
+            title="정리할 원본 CSV 선택",
+            initialdir=initial_dir,
+            filetypes=[("CSV", "*.csv"), ("모든 파일", "*.*")],
+        )
+        if not paths:
+            return
+
+        initial = self._last_trim_cutoff or datetime.now().strftime("%Y-%m-%d 00:00")
+        value = show_trim_time_dialog(
+            self.root,
+            initial,
+            title="원본 정리",
+            hint="이 시각 이전 행을 삭제합니다 (헤더는 유지, 해당 시각부터는 남김)",
+        )
+        if not value:
+            return
+        cutoff = parse_datetime_safe(value)
+        if cutoff is None:
+            messagebox.showerror("오류", "시간을 해석할 수 없습니다.", parent=self.root)
+            return
+
+        names = [os.path.basename(p) for p in paths]
+        preview = "\n".join(names[:8])
+        extra = f"\n… 외 {len(names) - 8}개" if len(names) > 8 else ""
+        if not messagebox.askyesno(
+            "원본 정리 확인",
+            f"{len(paths)}개 원본에서 {value} 이전 행을 삭제합니다.\n"
+            "되돌릴 수 없습니다.\n\n"
+            f"{preview}{extra}",
+            parent=self.root,
+        ):
+            return
+
+        ok_n = 0
+        deleted_total = 0
+        failed = []
+        for path in paths:
+            ok, n = self.file_processor.trim_source_before_time(path, cutoff)
+            if ok:
+                ok_n += 1
+                deleted_total += n
+            else:
+                failed.append(os.path.basename(path))
+
+        self._last_trim_cutoff = value
+        self._save_last_trim_cutoff(self._last_trim_cutoff)
+
+        msg = f"완료: {ok_n}개 파일, 삭제 {deleted_total}행"
+        if failed:
+            msg += f"\n실패: {', '.join(failed)}"
+        messagebox.showinfo("원본 정리", msg, parent=self.root)
 
     # ======================================================
     # 변환본 시간 이후 삭제

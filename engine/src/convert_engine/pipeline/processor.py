@@ -24,7 +24,7 @@ Convert Pro 3 – FileProcessor Core Principles (LOCKED)
   이후 append 시에는 헤더를 절대 다시 쓰지 않는다.
 
 [원칙 4] Battery 처리 규칙
-- 원본의 batLevel(56열)을 읽어 Length 위치(3열)에 battery 값으로 덮어쓴다.
+- 원본 batLevel을 찾아 3열(battery)에 넣는다 (이름/헤더/56열, 품질 점수).
 - Length 컬럼은 변환본에서 더 이상 의미를 가지지 않는다.
 - 24열 이후의 모든 원본 컬럼은 변환 과정에서 제거한다.
 - Battery는 UI 및 변환본 확인을 위한 핵심 값이다.
@@ -981,43 +981,10 @@ class FileProcessor:
             return False
 
     def _move_battery(self, df):
-        """배터리 이동: 56열(batLevel) → 3열(battery)"""
-        df = df.copy()
+        """배터리 추출 후 3열 기록 + 24열 트림 (이름/헤더/56열 후보)."""
+        from convert_engine.battery import move_battery_and_trim
 
-        # 원본 CSV의 컬럼 수 확인
-        num_cols = df.shape[1]
-        
-        if num_cols < 57:
-            # 56열(인덱스 56)이 없으면 0.0으로 채움
-            self.logger.log(
-                f"[배터리 이동] 컬럼 수 부족: {num_cols}개 (56열 필요). 배터리를 0.0으로 설정합니다.",
-                level="WARN"
-            )
-            battery = pd.Series([0.0] * len(df), dtype="float64")
-        else:
-            # 56열에서 배터리 읽기
-            try:
-                battery = pd.to_numeric(df.iloc[:, 56], errors="coerce").fillna(0.0)
-                self.logger.log(
-                    f"[배터리 이동] 56열에서 배터리 읽기 성공. 평균값: {battery.mean():.2f}",
-                    level="DEBUG"
-                )
-            except Exception as e:
-                self.logger.log(
-                    f"[배터리 이동] 56열 읽기 실패: {e}. 배터리를 0.0으로 설정합니다.",
-                    level="WARN"
-                )
-                battery = pd.Series([0.0] * len(df), dtype="float64")
-
-        # 3열에 배터리 값 할당 (dtype 호환성 보장)
-        # 컬럼 이름을 사용하여 안전하게 할당 (FutureWarning 방지)
-        col_name = df.columns[3]
-        df[col_name] = battery.astype("float64")
-        
-        # 24개 컬럼만 남기기
-        df = df.iloc[:, :24].copy()
-        
-        return df
+        return move_battery_and_trim(df, logger=self.logger)
 
     @staticmethod
     def _align60_needs_sync(main_path: str, align60_path: str) -> bool:

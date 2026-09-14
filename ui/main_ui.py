@@ -274,184 +274,79 @@ class MainUI:
         right_buttons = tk.Frame(button_frame, bg="white")
         right_buttons.pack(side="right")
 
-        # 버튼들을 리스트로 관리 (활성화/비활성화를 위해)
         self.buttons = []
-        
-        # 변환 실행 버튼 (강조)
-        convert_btn = tk.Button(
-            right_buttons,
-            text="변환 실행",
-            command=self.app.convert_now,
-            font=("맑은 고딕", 8, "bold"),
-            bg="#3498DB",
-            fg="white",
-            activebackground="#2980B9",
-            activeforeground="white",
-            relief="flat",
-            width=10,
-            height=1,
-            padx=8,
-            pady=4,
-            cursor="hand2"
+
+        def _btn(parent, text, command, *, bg, active, width, bold=False, padx_pack=3):
+            w = tk.Button(
+                parent,
+                text=text,
+                command=command,
+                font=("맑은 고딕", 8, "bold") if bold else ("맑은 고딕", 8),
+                bg=bg,
+                fg="white",
+                activebackground=active,
+                activeforeground="white",
+                relief="flat",
+                width=width,
+                height=1,
+                padx=8,
+                pady=4,
+                cursor="hand2",
+            )
+            w.pack(side="left", padx=padx_pack)
+            return w
+
+        def _menu(parent, text, items, *, bg="#5D6D7E", active="#4A5A6A", width=7):
+            mb = tk.Menubutton(
+                parent,
+                text=text,
+                font=("맑은 고딕", 8),
+                bg=bg,
+                fg="white",
+                activebackground=active,
+                activeforeground="white",
+                relief="flat",
+                width=width,
+                height=1,
+                padx=8,
+                pady=4,
+                cursor="hand2",
+            )
+            menu = tk.Menu(mb, tearoff=0, font=("맑은 고딕", 9))
+            for label, cmd in items:
+                menu.add_command(label=label, command=cmd)
+            mb.config(menu=menu)
+            mb.pack(side="left", padx=3)
+            return mb
+
+        convert_btn = _btn(
+            right_buttons, "변환 실행", self.app.convert_now,
+            bg="#3498DB", active="#2980B9", width=10, bold=True, padx_pack=(0, 5),
         )
-        convert_btn.pack(side="left", padx=(0, 5))
         self.buttons.append(convert_btn)
 
-        schedule_btn = tk.Button(
-            right_buttons,
-            text="자동변환 시각",
-            command=self._open_auto_convert_schedule_dialog,
-            font=("맑은 고딕", 8),
-            bg="#16A085",
-            fg="white",
-            activebackground="#138D75",
-            activeforeground="white",
-            relief="flat",
-            width=11,
-            height=1,
-            padx=8,
-            pady=4,
-            cursor="hand2",
+        self.stop_convert_btn = _btn(
+            right_buttons, "변환 중지", self.app.convert_stop,
+            bg="#E74C3C", active="#C0392B", width=8, bold=True, padx_pack=(0, 5),
         )
-        schedule_btn.pack(side="left", padx=(0, 5))
-        self.buttons.append(schedule_btn)
+        self.stop_convert_btn.config(state="disabled")
 
-        # 변환 중지 버튼 (변환 중일 때만 표시)
-        self.stop_convert_btn = tk.Button(
-            right_buttons,
-            text="⏹ 변환 중지",
-            command=self.app.convert_stop,
-            font=("맑은 고딕", 8, "bold"),
-            bg="#E74C3C",
-            fg="white",
-            activebackground="#C0392B",
-            activeforeground="white",
-            relief="flat",
-            width=10,
-            height=1,
-            padx=8,
-            pady=4,
-            cursor="hand2",
-            state="disabled"  # 기본 비활성화
-        )
-        self.stop_convert_btn.pack(side="left", padx=(0, 5))
-        
-        # 업체 관리 버튼
-        manage_company_btn = tk.Button(
-            right_buttons,
-            text="업체 관리",
-            command=self._manage_companies,
-            font=("맑은 고딕", 8),
-            bg="#27AE60",
-            fg="white",
-            activebackground="#229954",
-            activeforeground="white",
-            relief="flat",
-            width=8,
-            height=1,
-            padx=8,
-            pady=4,
-            cursor="hand2"
-        )
-        manage_company_btn.pack(side="left", padx=3)
-        self.buttons.append(manage_company_btn)
-        
-        add_site_btn = tk.Button(
-            right_buttons,
-            text="현장 추가",
-            command=self._add_site,
-            font=("맑은 고딕", 8),
-            bg="#95A5A6",
-            fg="white",
-            activebackground="#7F8C8D",
-            activeforeground="white",
-            relief="flat",
-            width=8,
-            height=1,
-            padx=8,
-            pady=4,
-            cursor="hand2"
-        )
-        add_site_btn.pack(side="left", padx=3)
-        self.buttons.append(add_site_btn)
-        
-        # 업데이트 확인 버튼
-        update_btn = tk.Button(
-            right_buttons,
-            text="업데이트",
-            command=self._check_update,
-            font=("맑은 고딕", 8),
-            bg="#9B59B6",
-            fg="white",
-            activebackground="#8E44AD",
-            activeforeground="white",
-            relief="flat",
-            width=8,
-            height=1,
-            padx=8,
-            pady=4,
-            cursor="hand2"
-        )
-        update_btn.pack(side="left", padx=3)
-        # 업데이트 버튼은 buttons 리스트에 추가하지 않음 (항상 활성화)
-        
-        add_folder_btn = tk.Button(
-            right_buttons,
-            text="로거파일 등록",
-            command=self._register_logger_files,
-            font=("맑은 고딕", 8),
-            bg="#95A5A6",
-            fg="white",
-            activebackground="#7F8C8D",
-            activeforeground="white",
-            relief="flat",
-            width=11,
-            height=1,
-            padx=8,
-            pady=4,
-            cursor="hand2"
-        )
-        add_folder_btn.pack(side="left", padx=3)
-        self.buttons.append(add_folder_btn)
+        self.buttons.append(_menu(right_buttons, "등록 ▾", [
+            ("로거파일 등록", self._register_logger_files),
+            ("NB추가", self._register_nb_files),
+            ("미등록 파일", self._open_unregistered_files),
+        ], bg="#16A085", active="#138D75"))
 
-        nb_add_btn = tk.Button(
-            right_buttons,
-            text="NB추가",
-            command=self._register_nb_files,
-            font=("맑은 고딕", 8),
-            bg="#8E44AD",
-            fg="white",
-            activebackground="#7D3C98",
-            activeforeground="white",
-            relief="flat",
-            width=8,
-            height=1,
-            padx=8,
-            pady=4,
-            cursor="hand2",
-        )
-        nb_add_btn.pack(side="left", padx=3)
-        self.buttons.append(nb_add_btn)
-        
-        # 미등록 파일 관리 버튼
-        unreg_files_btn = tk.Button(
-            right_buttons,
-            text="미등록 파일",
-            command=self._open_unregistered_files,
-            font=("맑은 고딕", 8),
-            bg="#E67E22",
-            fg="white",
-            activebackground="#D35400",
-            activeforeground="white",
-            relief="flat",
-            width=9,
-            height=1,
-            padx=8,
-            pady=4,
-            cursor="hand2"
-        )
-        unreg_files_btn.pack(side="left", padx=3)
-        self.buttons.append(unreg_files_btn)
+        self.buttons.append(_menu(right_buttons, "관리 ▾", [
+            ("업체 관리", self._manage_companies),
+            ("현장 추가", self._add_site),
+            ("자동변환 시각", self._open_auto_convert_schedule_dialog),
+            ("업데이트", self._check_update),
+        ], bg="#7F8C8D", active="#707B7C"))
+
+        self.buttons.append(_menu(right_buttons, "도구 ▾", [
+            ("원본 정리…", self.app.trim_source_files),
+        ], bg="#8E44AD", active="#7D3C98"))
         
         # ------------------------------ 웹 재시작 배너 (평소 숨김) -------------------------
         self._web_restart_banner = tk.Frame(main, bg="#E67E22")
@@ -872,7 +767,7 @@ class MainUI:
             yield from self._iter_tree_items(item)
 
     def find_file_node(self, company, site, folder, filename, parent=""):
-        """트리에서 파일 노드 검색 (카테고리·전체 업체 모드 포함)."""
+        """트리에서 파일 노드 검색 (전체 업체 모드 포함)."""
         for item in self.tree.get_children(parent):
             node_type = self.tree.set(item, "type") or ""
             if node_type == "file":
@@ -1074,19 +969,7 @@ class MainUI:
                     tags=tuple(site_tags)
                 )
 
-            # management.json 현장 카테고리 데이터
-            site_mgmt = {}
-            if hasattr(self.app, "mgmt") and self.app.mgmt:
-                site_mgmt = self.app.mgmt.get_site(company, site_name) or {}
-            has_categories = bool(
-                [s for s in site_mgmt.get("stations", []) if isinstance(s, dict)]
-            ) or bool(
-                [g for g in site_mgmt.get("station_groups", []) if isinstance(g, dict)]
-            )
-
-            use_folder_flat = self._site_filter_active()
-
-            # 폴더 노드는 항상 표시 (카테고리 모드에서도 현장명에 폴더를 흡수하지 않음)
+            # 폴더 → 파일만 (카테고리 그룹화 없음)
             for folder_name, folder_data in site_data.items():
                 if folder_name.startswith("__") or not isinstance(folder_data, dict):
                     continue
@@ -1107,19 +990,9 @@ class MainUI:
                 )
 
                 files_list = self._build_files_list(folder_data)
-                if has_categories and not use_folder_flat:
-                    folder_files = [
-                        (folder_name, sort_key, filename, file_cfg)
-                        for sort_key, filename, file_cfg in files_list
-                    ]
-                    self._insert_files_by_category(
-                        folder_id, company, site_name, site_mgmt, folder_files
-                    )
-                else:
-                    self._insert_folder_files(
-                        folder_id, company, site_name, site_mgmt, folder_name, files_list,
-                        flat=use_folder_flat,
-                    )
+                self._insert_folder_files(
+                    folder_id, company, site_name, folder_name, files_list
+                )
 
         # 기본 태그 스타일
         self.tree.tag_configure("ghost",        foreground="#999999")
@@ -1127,11 +1000,6 @@ class MainUI:
         self.tree.tag_configure("site_bold",    font=("맑은 고딕", 10, "bold"), foreground="#2C3E50")
         self.tree.tag_configure("folder_normal",font=("맑은 고딕", 9))
         self.tree.tag_configure("file_normal",  font=("맑은 고딕", 9))
-        # 카테고리 태그 스타일
-        self.tree.tag_configure("cat_group",      font=("맑은 고딕", 9, "bold"), foreground="#1a56db")
-        self.tree.tag_configure("cat_station",    font=("맑은 고딕", 9),         foreground="#374151")
-        self.tree.tag_configure("cat_unassigned", font=("맑은 고딕", 9, "italic"),foreground="#9ca3af")
-        self.tree.tag_configure("file_unassigned",foreground="#9ca3af")
 
         # 현장·폴더만 펼침 (파일/summary 전체 자동 펼침은 노드 폭증)
         def _expand(item, depth=0):
@@ -1148,7 +1016,7 @@ class MainUI:
             self._apply_tree_filter()
 
     # ======================================================
-    # 트리 파일 목록 헬퍼 (카테고리 그룹화)
+    # 트리 파일 목록 헬퍼
     # ======================================================
 
     def _build_files_list(self, folder_data):
@@ -1169,231 +1037,12 @@ class MainUI:
         files_list.sort(key=lambda x: (x[0], x[1]))
         return files_list
 
-    def _seed_by_cat_from_mgmt(self, by_cat, station_groups, stations):
-        """management.json 에만 있고 배정 로거가 없는 대·소분류도 트리에 표시되도록 빈 슬롯을 채운다."""
-        grp_map = {
-            g.get("id"): g
-            for g in station_groups
-            if isinstance(g, dict) and g.get("id")
-        }
-        group_ids = set(grp_map.keys())
-        sorted_groups = sorted(
-            [g for g in station_groups if isinstance(g, dict)],
-            key=lambda g: (
-                g.get("order") if g.get("order") is not None else 999,
-                str(g.get("id") or ""),
-            ),
-        )
-        for g in sorted_groups:
-            gid = g.get("id") or ""
-            go = g.get("order") if g.get("order") is not None else 999
-            gname = (g.get("name") or "").strip()
-            grp_key = (go, gid, gname)
-            if grp_key not in by_cat:
-                by_cat[grp_key] = {}
-            subs = sorted(
-                [s for s in stations if isinstance(s, dict) and (s.get("group_id") or "") == gid],
-                key=lambda s: (
-                    s.get("order") if s.get("order") is not None else 999,
-                    str(s.get("id") or ""),
-                ),
-            )
-            for s in subs:
-                sid = s.get("id") or ""
-                so = s.get("order") if s.get("order") is not None else 999
-                sname = (s.get("name") or "").strip() or str(sid)
-                st_key = (so, sid, sname)
-                if st_key not in by_cat[grp_key]:
-                    by_cat[grp_key][st_key] = []
+    def _insert_folder_files(self, folder_id, company, site_name, folder_name, files_list):
+        """폴더 바로 아래에 파일만 삽입."""
+        for _k, filename, file_cfg in files_list:
+            self._insert_file_node(folder_id, company, site_name, folder_name, filename, file_cfg)
 
-        ungrouped = sorted(
-            [
-                s
-                for s in stations
-                if isinstance(s, dict) and (s.get("group_id") or "") not in group_ids
-            ],
-            key=lambda s: (
-                s.get("order") if s.get("order") is not None else 999,
-                str(s.get("id") or ""),
-            ),
-        )
-        if ungrouped:
-            grp_key = (999, "", "")
-            if grp_key not in by_cat:
-                by_cat[grp_key] = {}
-            for s in ungrouped:
-                sid = s.get("id") or ""
-                so = s.get("order") if s.get("order") is not None else 999
-                sname = (s.get("name") or "").strip() or str(sid)
-                st_key = (so, sid, sname)
-                if st_key not in by_cat[grp_key]:
-                    by_cat[grp_key][st_key] = []
-
-    def _insert_files_by_category(self, parent_id, company, site_name, site_mgmt, all_files):
-        """카테고리(대분류→소분류→파일)로 삽입. parent_id는 보통 폴더 노드.
-        all_files: [(folder_name, sort_key, filename, file_cfg), ...]
-        """
-        station_groups = [g for g in site_mgmt.get("station_groups", []) if isinstance(g, dict)]
-        stations       = [s for s in site_mgmt.get("stations",       []) if isinstance(s, dict)]
-        grp_map        = {g["id"]: g for g in station_groups}
-        st_map         = {s["id"]: s for s in stations}
-        assignments    = site_mgmt.get("assignments", {})
-
-        by_cat    = {}
-        unassigned = []
-
-        for folder_name, sort_key, filename, file_cfg in all_files:
-            sid = assignments.get(f"{folder_name}/{filename}", "")
-            if sid and sid in st_map:
-                st    = st_map[sid]
-                gid   = st.get("group_id", "")
-                grp   = grp_map.get(gid, {}) if gid else {}
-                go    = grp.get("order", 999) if grp else 999
-                gname = grp.get("name",  "")  if grp else ""
-                so    = st.get("order", 999)
-                sname = st.get("name",  "")
-                grp_key = (go, gid or "", gname)
-                st_key  = (so, sid, sname)
-                by_cat.setdefault(grp_key, {}).setdefault(st_key, []).append(
-                    (sort_key, folder_name, filename, file_cfg)
-                )
-            else:
-                unassigned.append((sort_key, folder_name, filename, file_cfg))
-
-        self._seed_by_cat_from_mgmt(by_cat, station_groups, stations)
-
-        for grp_key in sorted(by_cat.keys()):
-            go, gid, gname = grp_key
-            st_dict = by_cat[grp_key]
-            grp_cnt = sum(len(v) for v in st_dict.values())
-
-            if gname:
-                grp_node = self.tree.insert(
-                    parent_id, "end",
-                    text=f"{gname}  ({grp_cnt})",
-                    values=("", "", "cat_group", company, site_name, "", "", ""),
-                    tags=("cat_group",)
-                )
-            else:
-                grp_node = parent_id
-
-            for st_key in sorted(st_dict.keys()):
-                so, st_id, st_name = st_key
-                files = st_dict[st_key]
-                st_node = self.tree.insert(
-                    grp_node, "end",
-                    text=f"{st_name}  ({len(files)})",
-                    values=("", "", "cat_station", company, site_name, "", "", ""),
-                    tags=("cat_station",)
-                )
-                for _sk, folder_name, filename, file_cfg in files:
-                    self._insert_file_node(
-                        st_node, company, site_name, folder_name, filename, file_cfg, registered=True
-                    )
-
-        if unassigned:
-            ung_node = self.tree.insert(
-                parent_id, "end",
-                text=f"미배정  ({len(unassigned)})",
-                values=("", "", "cat_unassigned", company, site_name, "", "", ""),
-                tags=("cat_unassigned",)
-            )
-            for _sk, folder_name, filename, file_cfg in unassigned:
-                self._insert_file_node(
-                    ung_node, company, site_name, folder_name, filename, file_cfg, registered=False
-                )
-
-    def _insert_folder_files(self, folder_id, company, site_name, site_mgmt, folder_name, files_list,
-                             flat=False):
-        """
-        파일을 카테고리(대분류→소분류) 기준으로 그룹화하여 트리에 삽입.
-        flat=True 이면 폴더 바로 아래에 파일만 표시 (현장 1개 필터용).
-
-        site_mgmt: management.json의 현장 관리 데이터 dict (없으면 빈 dict)
-        """
-        stations = [s for s in site_mgmt.get("stations", []) if isinstance(s, dict)]
-        if flat or not stations:
-            # 소분류 없음 → 기존 flat 방식
-            for _k, filename, file_cfg in files_list:
-                self._insert_file_node(folder_id, company, site_name, folder_name, filename, file_cfg)
-            return
-
-        station_groups = [g for g in site_mgmt.get("station_groups", []) if isinstance(g, dict)]
-        grp_map     = {g["id"]: g for g in station_groups}
-        st_map      = {s["id"]: s for s in stations}
-        assignments = site_mgmt.get("assignments", {})
-
-        # 파일을 카테고리별로 분류
-        # by_cat: (grp_order, grp_id, grp_name) → {(st_order, st_id, st_name): [files]}
-        by_cat = {}
-        unassigned = []
-
-        for sort_key, filename, file_cfg in files_list:
-            sid = assignments.get(f"{folder_name}/{filename}", "")
-            if sid and sid in st_map:
-                st = st_map[sid]
-                gid   = st.get("group_id", "")
-                grp   = grp_map.get(gid, {}) if gid else {}
-                go    = grp.get("order", 999) if grp else 999
-                gname = grp.get("name", "")   if grp else ""
-                so    = st.get("order", 999)
-                sname = st.get("name", "")
-                grp_key = (go, gid or "", gname)
-                st_key  = (so, sid, sname)
-                by_cat.setdefault(grp_key, {}).setdefault(st_key, []).append(
-                    (sort_key, filename, file_cfg)
-                )
-            else:
-                unassigned.append((sort_key, filename, file_cfg))
-
-        self._seed_by_cat_from_mgmt(by_cat, station_groups, stations)
-
-        # 대분류 기준 정렬 출력
-        for grp_key in sorted(by_cat.keys()):
-            go, gid, gname = grp_key
-            st_dict = by_cat[grp_key]
-            grp_cnt = sum(len(v) for v in st_dict.values())
-
-            if gname:
-                grp_node = self.tree.insert(
-                    folder_id, "end",
-                    text=f"{gname}  ({grp_cnt})",
-                    values=("", "", "cat_group", company, site_name, folder_name, "", ""),
-                    tags=("cat_group",)
-                )
-            else:
-                # 대분류 없는 소분류 → 폴더 직접 아래
-                grp_node = folder_id
-
-            for st_key in sorted(st_dict.keys()):
-                so, st_id, st_name = st_key
-                files = st_dict[st_key]
-                st_node = self.tree.insert(
-                    grp_node, "end",
-                    text=f"{st_name}  ({len(files)})",
-                    values=("", "", "cat_station", company, site_name, folder_name, "", ""),
-                    tags=("cat_station",)
-                )
-                for _k, filename, file_cfg in files:
-                    self._insert_file_node(
-                        st_node, company, site_name, folder_name, filename, file_cfg, registered=True
-                    )
-
-        # 미배정 섹션
-        if unassigned:
-            ung_node = self.tree.insert(
-                folder_id, "end",
-                text=f"미배정  ({len(unassigned)})",
-                values=("", "", "cat_unassigned", company, site_name, folder_name, "", ""),
-                tags=("cat_unassigned",)
-            )
-            for _k, filename, file_cfg in unassigned:
-                self._insert_file_node(
-                    ung_node, company, site_name, folder_name, filename, file_cfg, registered=False
-                )
-
-    def _insert_file_node(self, parent_id, company, site_name, folder_name, filename, file_cfg,
-                          registered=None):
+    def _insert_file_node(self, parent_id, company, site_name, folder_name, filename, file_cfg):
         """단일 파일 노드를 트리에 삽입 (채널 summary 포함)"""
         label_summary  = self.app.tree.get_file_label_summary(company, site_name, folder_name, filename)
         cached_batt = self.app.battery_cache.get((company, site_name, folder_name, filename))
@@ -1411,8 +1060,6 @@ class MainUI:
         file_tags = ["file_normal"]
         if is_ghost_file:
             file_tags.append("ghost")
-        if registered is False:
-            file_tags.append("file_unassigned")
 
         file_id = self.tree.insert(
             parent_id, "end",
@@ -1450,18 +1097,13 @@ class MainUI:
         """모든 버튼 활성화/비활성화 (변환 중일 때 중지 버튼 활성화)"""
         state = "normal" if enabled else "disabled"
         for btn in self.buttons:
-            if isinstance(btn, tk.Button):
-                if enabled:
-                    # 원래 색상으로 복원
-                    if btn.cget("text") == "변환 실행":
-                        btn.config(bg="#3498DB", state=state)
-                    else:
-                        btn.config(bg="#95A5A6", state=state)
+            if enabled:
+                if isinstance(btn, tk.Button) and btn.cget("text") == "변환 실행":
+                    btn.config(bg="#3498DB", state=state, cursor="hand2")
                 else:
-                    # 비활성화 시 회색
-                    btn.config(bg="#BDC3C7", state=state, cursor="arrow")
+                    btn.config(state=state, cursor="hand2")
             else:
-                btn.config(state=state)
+                btn.config(state=state, cursor="arrow")
 
         # 변환 중지 버튼: 변환 중일 때만 활성화
         if hasattr(self, "stop_convert_btn"):

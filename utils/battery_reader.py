@@ -1,35 +1,36 @@
 # utils/battery_reader.py
+"""변환본 CSV에서 마지막 행의 battery(인덱스 3) 읽기."""
+from __future__ import annotations
+
 import os
+
+from utils.battery import OUT_BATTERY_COL, parse_battery_cell
 
 
 class BatteryReader:
     """
-    변환된 CSV 파일에서 마지막 행의 4번째 열(인덱스 3)에서 배터리 값을 읽는다.
-    - 변환본 구조: timestamp, deviceId, STX, battery, ...
-    - 변환할 때만 읽으면 됨 (변환 후 배터리 갱신)
+    변환된 CSV 파일에서 마지막 데이터 행의 battery(4번째 열)를 읽는다.
+    - 성공: float (0.0 포함 — 파일에 진짜 0이 있을 때)
+    - 파일 없음·열 없음·파싱 실패: None  (UI는 "—" 로 표시)
     """
 
     def __init__(self, logger=None):
         self.logger = logger
 
-    def read_last_battery(self, csv_path: str):
-        """
-        변환된 CSV 파일의 마지막 행에서 4번째 열(인덱스 3)의 배터리 값을 읽는다.
-        파일 없음·열 없음·빈 값·파싱 실패 시 0.0 반환.
-        """
+    def read_last_battery(self, csv_path: str) -> float | None:
         if not csv_path or not os.path.exists(csv_path):
             if self.logger:
-                self.logger.log(f"[BatteryReader] 파일 없음: {csv_path} → 0.0", level="DEBUG")
-            return 0.0
+                self.logger.log(f"[BatteryReader] 파일 없음: {csv_path}", level="DEBUG")
+            return None
 
         try:
-            # 파일 끝에서부터 역순으로 읽어서 마지막 행 찾기
             with open(csv_path, "rb") as f:
                 f.seek(0, os.SEEK_END)
                 pos = f.tell()
-                buf = b""
+                if pos <= 0:
+                    return None
 
-                # 최대 10KB만 역순으로 읽기 (성능 최적화)
+                buf = b""
                 max_read = min(pos, 10240)
                 start_pos = max(0, pos - max_read)
 
@@ -41,110 +42,76 @@ class BatteryReader:
                     if b == b"\n":
                         if not buf:
                             continue
-
-                        # 역순으로 읽었으므로 뒤집기
                         line = buf[::-1].decode("utf-8", errors="ignore").strip()
                         buf = b""
-
-                        if not line or line.lower().startswith("timestamp,"):
-                            continue
-
-                        # CSV 파싱: 4번째 열(인덱스 3) 읽기
-                        # 쉼표로 분리하되, 따옴표 안의 쉼표는 무시
-                        parts = []
-                        current = ""
-                        in_quotes = False
-                        
-                        for char in line:
-                            if char == '"':
-                                in_quotes = not in_quotes
-                            elif char == ',' and not in_quotes:
-                                parts.append(current)
-                                current = ""
-                            else:
-                                current += char
-                        parts.append(current)  # 마지막 부분
-                        
-                        if len(parts) >= 4:
-                            raw = parts[3].strip().strip('"')
-                            if not raw:
-                                if self.logger:
-                                    self.logger.log(
-                                        f"[BatteryReader] 배터리 열 비어 있음: {csv_path} → 0.0",
-                                        level="DEBUG",
-                                    )
-                                return 0.0
-                            try:
-                                battery_value = float(raw)
-                                if self.logger:
-                                    self.logger.log(
-                                        f"[BatteryReader] 배터리 읽기 성공: {csv_path} → {battery_value}%",
-                                        level="DEBUG",
-                                    )
-                                return battery_value
-                            except (ValueError, TypeError) as e:
-                                if self.logger:
-                                    self.logger.log(
-                                        f"[BatteryReader] 배터리 값 변환 실패: {csv_path}, 값: '{raw}', 오류: {e} → 0.0",
-                                        level="DEBUG",
-                                    )
-                                return 0.0
-
+                        val = self._battery_from_line(line, csv_path)
+                        if val is not None or self._is_header_line(line):
+                            if self._is_header_line(line):
+                                continue
+                            return val
                     else:
                         buf += b
 
-                # 파일이 '\n' 없이 끝난 경우
                 if buf:
                     line = buf[::-1].decode("utf-8", errors="ignore").strip()
-                    if line and not line.lower().startswith("timestamp,"):
-                        # CSV 파싱 (위와 동일)
-                        parts = []
-                        current = ""
-                        in_quotes = False
-                        
-                        for char in line:
-                            if char == '"':
-                                in_quotes = not in_quotes
-                            elif char == ',' and not in_quotes:
-                                parts.append(current)
-                                current = ""
-                            else:
-                                current += char
-                        parts.append(current)
-                        
-                        if len(parts) >= 4:
-                            raw = parts[3].strip().strip('"')
-                            if not raw:
-                                if self.logger:
-                                    self.logger.log(
-                                        f"[BatteryReader] 배터리 열 비어 있음 (마지막 행): {csv_path} → 0.0",
-                                        level="DEBUG",
-                                    )
-                                return 0.0
-                            try:
-                                battery_value = float(raw)
-                                if self.logger:
-                                    self.logger.log(
-                                        f"[BatteryReader] 배터리 읽기 성공 (마지막 행): {csv_path} → {battery_value}%",
-                                        level="DEBUG",
-                                    )
-                                return battery_value
-                            except (ValueError, TypeError):
-                                if self.logger:
-                                    self.logger.log(
-                                        f"[BatteryReader] 배터리 값 변환 실패 (마지막 행): {csv_path} → 0.0",
-                                        level="DEBUG",
-                                    )
-                                return 0.0
+                    if line and not self._is_header_line(line):
+                        return self._battery_from_line(line, csv_path)
 
         except Exception as e:
             if self.logger:
                 self.logger.log(
-                    f"[BatteryReader] 배터리 읽기 오류: {csv_path}, 오류: {e} → 0.0",
-                    level="ERROR"
+                    f"[BatteryReader] 오류: {csv_path}, {e}",
+                    level="ERROR",
                 )
-            return 0.0
+            return None
 
         if self.logger:
-            self.logger.log(f"[BatteryReader] 배터리 읽기 실패: {csv_path} → 0.0", level="DEBUG")
-        return 0.0
+            self.logger.log(f"[BatteryReader] 데이터 행 없음: {csv_path}", level="DEBUG")
+        return None
+
+    @staticmethod
+    def _is_header_line(line: str) -> bool:
+        low = line.lower()
+        return low.startswith("timestamp,") or low.startswith("timestamp;")
+
+    def _battery_from_line(self, line: str, csv_path: str) -> float | None:
+        if not line:
+            return None
+        parts = self._split_csv_line(line)
+        if len(parts) <= OUT_BATTERY_COL:
+            if self.logger:
+                self.logger.log(
+                    f"[BatteryReader] 열 부족 ({len(parts)}): {csv_path}",
+                    level="DEBUG",
+                )
+            return None
+        val = parse_battery_cell(parts[OUT_BATTERY_COL])
+        if val is None:
+            if self.logger:
+                self.logger.log(
+                    f"[BatteryReader] 배터리 칸 비어있음/비숫자: {csv_path}",
+                    level="DEBUG",
+                )
+            return None
+        if self.logger:
+            self.logger.log(
+                f"[BatteryReader] OK: {csv_path} → {val}%",
+                level="DEBUG",
+            )
+        return val
+
+    @staticmethod
+    def _split_csv_line(line: str) -> list[str]:
+        parts: list[str] = []
+        current = ""
+        in_quotes = False
+        for char in line:
+            if char == '"':
+                in_quotes = not in_quotes
+            elif char == "," and not in_quotes:
+                parts.append(current)
+                current = ""
+            else:
+                current += char
+        parts.append(current)
+        return parts

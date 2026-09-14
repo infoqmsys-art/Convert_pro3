@@ -24,9 +24,10 @@ Convert Pro 3 – FileProcessor Core Principles (LOCKED)
   이후 append 시에는 헤더를 절대 다시 쓰지 않는다.
 
 [원칙 4] Battery 처리 규칙
-- 원본의 batLevel(56열)을 읽어 Length 위치(3열)에 battery 값으로 덮어쓴다.
-- Length 컬럼은 변환본에서 더 이상 의미를 가지지 않는다.
-- 24열 이후의 모든 원본 컬럼은 변환 과정에서 제거한다.
+- 원본 batLevel을 찾아 변환본 3열(battery)에 넣는다.
+  후보: 컬럼명 / 0행 헤더명 / 고정 인덱스 56. 숫자(0~105%) 품질로 고른다 (utils.battery).
+- 실패(열 없음·파싱 불가)와 실제 0%는 구분한다 (추출은 NaN, UI는 "—").
+- 24열 이후 원본 컬럼은 변환 과정에서 제거한다.
 - Battery는 UI 및 변환본 확인을 위한 핵심 값이다.
 
 [원칙 5] 안정성 우선
@@ -981,44 +982,10 @@ class FileProcessor:
             return False
 
     def _move_battery(self, df):
-        """배터리 이동: 56열(batLevel) → 3열(battery)"""
-        df = df.copy()
+        """배터리 추출 후 3열 기록 + 24열 트림 (utils.battery)."""
+        from utils.battery import move_battery_and_trim
 
-        # 원본 CSV의 컬럼 수 확인
-        num_cols = df.shape[1]
-        
-        if num_cols < 57:
-            # 56열(인덱스 56)이 없으면 0.0으로 채움
-            self.logger.log(
-                f"[배터리 이동] 컬럼 수 부족: {num_cols}개 (56열 필요). 배터리를 0.0으로 설정합니다.",
-                level="WARN"
-            )
-            battery = pd.Series([0.0] * len(df), dtype="float64")
-        else:
-            # 56열에서 배터리 읽기
-            try:
-                battery = pd.to_numeric(df.iloc[:, 56], errors="coerce").fillna(0.0)
-                self.logger.log(
-                    f"[배터리 이동] 56열에서 배터리 읽기 성공. 평균값: {battery.mean():.2f}",
-                    level="DEBUG"
-                )
-            except Exception as e:
-                self.logger.log(
-                    f"[배터리 이동] 56열 읽기 실패: {e}. 배터리를 0.0으로 설정합니다.",
-                    level="WARN"
-                )
-                battery = pd.Series([0.0] * len(df), dtype="float64")
-
-        # 3열에 배터리 값 할당 (dtype 호환성 보장)
-        # 컬럼 이름을 사용하여 안전하게 할당 (FutureWarning 방지)
-        col_name = df.columns[3]
-        df[col_name] = battery.astype("float64")
-        
-        # 24개 컬럼만 남기기
-        df = df.iloc[:, :24].copy()
-        
-        return df
-
+        return move_battery_and_trim(df, logger=self.logger)
     @staticmethod
     def _align60_needs_sync(main_path: str, align60_path: str) -> bool:
         """10분 변환본 대비 _60.csv 생성·갱신 필요 여부."""
@@ -1212,12 +1179,15 @@ class FileProcessor:
             pass
 
     def apply_decimal(self, df, file_cfg):
-        """채널별 소수점 설정 적용"""
+        """슬롯별 소수점 설정 적용 (degreeX/Y + CH0~7)."""
+        from core.sensor_processor import SENSOR_SLOTS
+
         df = df.copy()
 
-        for ch in range(8):
-            col = 16 + ch
-            ch_cfg = file_cfg.get(f"CH{ch}", {})
+        for slot_key, col in SENSOR_SLOTS:
+            ch_cfg = file_cfg.get(slot_key, {})
+            if not isinstance(ch_cfg, dict):
+                continue
             dec = ch_cfg.get("decimal", "")
 
             if dec in ("", None):
@@ -1225,13 +1195,58 @@ class FileProcessor:
 
             try:
                 d = int(dec)
-            except:
+            except Exception:
                 continue
 
+            if col >= df.shape[1]:
+                continue
             df.iloc[:, col] = pd.to_numeric(df.iloc[:, col], errors="coerce").round(d)
 
         return df
     
+    def trim_source_before_time(self, src_path: str, cutoff_datetime) -> tuple[bool, int]:
+        """
+        원본 CSV에서 cutoff 미만 행만 삭제. 헤더(첫 행이 시간이 아니면)는 유지.
+        Returns: (성공, 삭제 행 수)
+        """
+        if not src_path or not os.path.exists(src_path):
+            return False, 0
+        cutoff = pd.Timestamp(cutoff_datetime)
+        try:
+            with open(src_path, "r", encoding="utf-8-sig", newline="") as f:
+                raw_lines = f.readlines()
+            if not raw_lines:
+                return True, 0
+
+            kept: list[str] = []
+            start = 0
+            if FileProcessor._parse_source_line_ts(raw_lines[0]) is None:
+                kept.append(raw_lines[0])
+                start = 1
+
+            deleted = 0
+            for line in raw_lines[start:]:
+                if not line.strip():
+                    kept.append(line)
+                    continue
+                ts = FileProcessor._parse_source_line_ts(line)
+                if ts is None or ts >= cutoff:
+                    kept.append(line)
+                else:
+                    deleted += 1
+
+            with open(src_path, "w", encoding="utf-8-sig", newline="") as f:
+                f.writelines(kept)
+
+            self.logger.log(
+                f"원본 정리: {src_path} ({deleted}행 삭제, cutoff={cutoff})",
+                level="INFO",
+            )
+            return True, deleted
+        except Exception as e:
+            self.logger.log(f"원본 정리 실패: {src_path} - {e}", level="ERROR")
+            return False, 0
+
     def trim_converted_from_time(self, out_path: str, cutoff_datetime) -> tuple[bool, int]:
         """
         변환본에서 지정 시간 이상(>=)인 행을 삭제.

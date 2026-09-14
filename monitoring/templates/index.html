@@ -1518,7 +1518,6 @@ function renderDashSitePreview(site) {
           </span>
           <span class="dash-preview-actions-inline">
             <button type="button" class="site-card-edit-btn" onclick="openSiteDetail(_dashSiteRows[${safeIdx}])">\uC804\uCCB4 \uD3B8\uC9D1</button>
-            <button type="button" class="btn-secondary dash-preview-btn-cat" onclick="openSiteDetailStation(_dashSiteRows[${safeIdx}])">\uCE74\uD14C\uACE0\uB9AC</button>
           </span>
         </div>
         <div class="dash-preview-info-rows dash-preview-info-sheet">
@@ -1556,10 +1555,10 @@ function renderDashSitePreview(site) {
       <div class="info-card dash-preview-tree-col">
         <div class="info-card-title" style="border:none;padding-bottom:0;margin-bottom:8px">
           <span class="info-card-title-text">
-            \uAC1C\uC18C \uAD6C\uC870 (\uD2B8\uB9AC)
+            \uD3F4\uB354 / \uD30C\uC77C
           </span>
         </div>
-        <div class="cat-readonly-tree dash-preview-tree-inner">${buildCategoryReadonlyTreeHtml(site)}</div>
+        <div class="cat-readonly-tree dash-preview-tree-inner">${buildFolderFileTreeHtml(site)}</div>
       </div>
     </div>
   `;
@@ -1608,14 +1607,7 @@ function openSiteDetail(siteData) {
   // 탭 초기화
   switchDetailTab("info");
 
-  // 각 탭 패널 렌더
   renderDetailPanelInfo(siteData);
-  renderDetailPanelStation(siteData);
-}
-
-function openSiteDetailStation(siteData) {
-  openSiteDetail(siteData);
-  switchDetailTab("station");
 }
 
 function closeSiteDetail() {
@@ -1623,60 +1615,26 @@ function closeSiteDetail() {
   if (_currentPage === "dashboard") refreshAll();
 }
 
-/* ── 개소 구조 읽기 전용 HTML (대시보드 미리보기 전용) ── */
-function _loggerCountByStationId(site) {
-  const map = Object.create(null);
-  (site.stations || []).forEach((s) => {
-    if (s && s.id) map[s.id] = 0;
-  });
-  (site.folders || []).forEach((fo) => {
-    (fo.files || []).forEach((f) => {
-      const sid = f.station_id;
-      if (sid && map[sid] !== undefined) map[sid]++;
-    });
-  });
-  return map;
+/* ── 폴더 > 파일 읽기 전용 HTML (대시보드 미리보기) ── */
+function buildFolderFileTreeHtml(site) {
+  const folders = site.folders || [];
+  if (!folders.length) {
+    return '<div class="crt-empty">등록된 폴더가 없습니다.</div>';
+  }
+  const rows = folders.map((fo) => {
+    const name = (fo.folder || "").trim() || "(폴더)";
+    const files = fo.files || [];
+    const fileRows = files.map((f) => {
+      const fn = (f.filename || "").trim() || "(파일)";
+      return `<div class="crt-station"><span class="crt-line"></span><span class="crt-name">${escHtml(fn)}</span></div>`;
+    }).join("");
+    return `<div class="crt-group"><div class="crt-gname">${escHtml(name)} <span class="crt-badge">${files.length}</span></div>${fileRows || ""}</div>`;
+  }).join("");
+  return `<div class="crt-body">${rows}</div>`;
 }
 
 function buildCategoryReadonlyTreeHtml(site) {
-  const groups = [...(site.station_groups || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
-  const stations = [...(site.stations || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
-  const cnt = _loggerCountByStationId(site);
-  const groupIds = new Set(groups.map((g) => g.id).filter(Boolean));
-
-  function rowStation(st) {
-    const n = st && st.id != null && cnt[st.id] !== undefined ? cnt[st.id] : (st.logger_count != null ? st.logger_count : 0);
-    const label = (st.name || st.id || "").trim() || "(이름 없음)";
-    return `<div class="crt-station"><span class="crt-line"></span><span class="crt-name">${escHtml(label)}</span><span class="crt-badge" title="배정 로거 수">${n}</span></div>`;
-  }
-
-  if (!stations.length && !groups.length) {
-    return '<div class="crt-empty">등록된 카테고리(대·소분류)가 없습니다.<span class="crt-hint">「카테고리」 탭에서 추가할 수 있습니다.</span></div>';
-  }
-
-  if (!groups.length) {
-    return `<div class="crt-body">${stations.length ? stations.map(rowStation).join("") : '<div class="crt-empty" style="padding:12px;font-size:12px">소분류만 있고 항목이 없습니다.</div>'}</div>`;
-  }
-
-  let html = '<div class="crt-body">';
-  for (const g of groups) {
-    const gid = g.id;
-    const subs = stations.filter((s) => s.group_id === gid);
-    const subsShown = subs.length ? subs.map(rowStation).join("") : '<div class="crt-empty" style="padding:12px;font-size:12px">소분류 없음 (대분류만 추가됨)</div>';
-    html += `<div class="crt-group">
-      <div class="crt-group-head"><span class="crt-group-name">${escHtml((g.name || g.id || "").trim() || "(대분류)")}</span><span class="crt-badge-soft">${subs.length}</span></div>
-      <div class="crt-group-kids">${subsShown}</div>
-    </div>`;
-  }
-  const ungrouped = stations.filter((s) => !s.group_id || !groupIds.has(s.group_id));
-  if (ungrouped.length) {
-    html += `<div class="crt-group">
-      <div class="crt-group-head crt-ungrouped"><span class="crt-group-name">미분류</span><span class="crt-badge-soft">${ungrouped.length}</span></div>
-      <div class="crt-group-kids">${ungrouped.map(rowStation).join("")}</div>
-    </div>`;
-  }
-  html += "</div>";
-  return html;
+  return buildFolderFileTreeHtml(site);
 }
 
 /* ── 탭1: 현장 정보 (+ 담당자 배정 동일 패널) ── */

@@ -47,22 +47,9 @@ class FolderContextMenu:
         finally:
             self.menu.grab_release()
 
-    _CAT_NODE_TYPES = {"cat_group", "cat_station", "cat_unassigned"}
-
     def _build_menu_for_type(self, node_type: str | None, multi_file: bool = False):
         """노드 타입(file/folder/site/summary 등)에 따라 메뉴 항목 동적 구성"""
         self.menu.delete(0, "end")
-
-        # 카테고리 가상 노드: 대분류/소분류/미배정 → 업로드 메뉴 제공
-        if node_type == "cat_group":
-            self.menu.add_command(label="대분류 업로드", command=self._upload_cat_node)
-            return
-        if node_type == "cat_station":
-            self.menu.add_command(label="소분류 업로드", command=self._upload_cat_node)
-            return
-        if node_type == "cat_unassigned":
-            self.menu.add_command(label="미배정 파일 업로드", command=self._upload_cat_node)
-            return
 
         # 비고 편집 (summary 이외에는 항상 가능)
         self.menu.add_command(label="비고 편집", command=self._edit_note)
@@ -496,25 +483,6 @@ class FolderContextMenu:
             else:
                 result.extend(self._collect_file_nodes(child))
         return result
-
-    def _upload_cat_node(self):
-        """대분류/소분류/미배정 노드 아래 파일을 일괄 업로드."""
-        info = self._get_current_item_info()
-        if not info:
-            return
-        node_type = info["type"]
-        label_map = {
-            "cat_group":      "대분류",
-            "cat_station":    "소분류",
-            "cat_unassigned": "미배정",
-        }
-        label = label_map.get(node_type, "카테고리")
-        files = self._collect_file_nodes(info["item"])
-        if not files:
-            messagebox.showinfo("안내", f"{label}에 파일이 없습니다.", parent=self.root)
-            return
-        node_name = self.tree.item(info["item"], "text").split("(")[0].strip()
-        self.app.convert_files_batch(files, label=f"{label}({node_name})")
 
     # =========================
     # 삭제 (현장 / 폴더 / 파일)

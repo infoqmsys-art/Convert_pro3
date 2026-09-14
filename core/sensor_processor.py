@@ -107,6 +107,23 @@ MODE_META = {
 # 원본미참조 모드 집합 (원본 센서값 무시, 자체 생성)
 NON_REF_MODES = frozenset(k for k, v in MODE_META.items() if not v["ref"])
 
+# 센서 설정 슬롯: 로거 내장 경사(degreeX/Y) + 외장 AmountCH0~7
+# STANDARD_HEADER 인덱스와 1:1
+SENSOR_SLOTS = (
+    ("degreeX", 13),  # degreeXAmount — 로거 내장 경사 X
+    ("degreeY", 14),  # degreeYAmount — 로거 내장 경사 Y
+    ("CH0", 16),
+    ("CH1", 17),
+    ("CH2", 18),
+    ("CH3", 19),
+    ("CH4", 20),
+    ("CH5", 21),
+    ("CH6", 22),
+    ("CH7", 23),
+)
+SENSOR_SLOT_KEYS = tuple(k for k, _ in SENSOR_SLOTS)
+SENSOR_SLOT_COL = {k: c for k, c in SENSOR_SLOTS}
+
 # 대소문자 무관 모드 조회용 (upper → 원본 키)
 _MODE_UPPER_MAP = {k.upper(): k for k in MODE_META}
 
@@ -165,30 +182,28 @@ class SensorProcessor:
         """
         Column-based processing entry.
 
-        - file_cfg를 기반으로 채널 설정을 로드
-        - CH0~CH7(16~23) 컬럼을 모드별 generate_XXX로 처리
-        - row loop 없음 (iterrows/apply_row 제거)
+        - file_cfg 기반 슬롯 로드: degreeX/Y(내장 경사) + CH0~CH7(외장)
+        - 각 슬롯 col_idx에 모드별 generate_XXX 적용
         """
         if df is None or df.empty:
             return df
 
-        # CH0~CH7 컬럼 인덱스 16~23 고정 전제 체크
         if df.shape[1] < 24:
             if self.logger:
                 self.logger.log(
-                    f"[SensorProcessor] df 컬럼 수 부족: {df.shape[1]} (CH0~CH7은 16~23 필요)",
+                    f"[SensorProcessor] df 컬럼 수 부족: {df.shape[1]} (24열 필요)",
                     level="ERROR",
                 )
             return df
 
         channels = self._load_channels(file_cfg)
         vib_block = file_cfg.get("__vib_init__")
-        for _ch, cfg in channels.items():
+        for _slot, cfg in channels.items():
             cfg["__vib_init__"] = vib_block
 
         if self.logger:
             self.logger.log(
-                "센서 설정 로드 완료 (컬럼 기반)",
+                "센서 설정 로드 완료 (내장 degreeX/Y + 외장 CH0~7)",
                 level="DEBUG"
             )
             
@@ -212,7 +227,7 @@ class SensorProcessor:
                 .astype(float)
             )
 
-        for ch, cfg in channels.items():
+        for slot, cfg in channels.items():
             mode = cfg["mode"]
             if mode == "PASS":
                 continue
@@ -250,12 +265,12 @@ class SensorProcessor:
             except Exception as e:
                 if self.logger:
                     self.logger.log(
-                        f"[SensorProcessor] 채널 처리 실패 (CH{ch}, mode={mode}): {e}",
+                        f"[SensorProcessor] 슬롯 처리 실패 ({slot}, mode={mode}): {e}",
                         level="ERROR",
                     )
 
         # ── 채널별 최종 가산(post_offset): 모드·PASS 공통으로 파이프라인 맨 마지막 ──
-        for _ch, cfg in channels.items():
+        for _slot, cfg in channels.items():
             po_f = cfg.get("post_offset")
             try:
                 po_f = float(po_f or 0.0)
@@ -295,24 +310,20 @@ class SensorProcessor:
     # ======================================================
     def _load_channels(self, file_cfg: dict) -> dict:
         """
-        file_cfg를 해석해 채널 설정만 구성한다. (df 접근/연산 금지)
+        file_cfg를 해석해 센서 슬롯 설정을 구성한다. (df 접근/연산 금지)
 
-        cfg 구조:
-        - mode: str
-        - col_idx: int (16+ch)
-        - base: 상수(float/int) 또는 컬럼 인덱스(int) 또는 None
-        - scale: float 또는 문자열("VW") 또는 None
-        - base_ref: bool (옵션) -> True면 base를 컬럼 참조로 강제
-        - post_offset: 채널 변환 결과(모든 모드)·PASS 포함 최종 출력에 더할 상수(float)
+        슬롯: degreeX(13), degreeY(14), CH0~CH7(16~23)
+        cfg: mode, col_idx, base, scale, post_offset, ...
         """
         result = {}
 
         if not isinstance(file_cfg, dict):
             file_cfg = {}
 
-        for ch in range(8):
-            ch_key = f"CH{ch}"
-            raw = file_cfg.get(ch_key, {}) if isinstance(file_cfg.get(ch_key, {}), dict) else {}
+        for slot_key, col_idx in SENSOR_SLOTS:
+            raw = file_cfg.get(slot_key, {})
+            if not isinstance(raw, dict):
+                raw = {}
 
             # offset(구 config) → mode 호환 (config에 mode가 없으면 offset 사용)
             # 대소문자 무관 매칭: L-KoreaHY 처럼 mixed-case 모드명도 정상 인식
@@ -323,7 +334,8 @@ class SensorProcessor:
 
             cfg = {
                 "mode": mode,
-                "col_idx": 16 + ch,
+                "col_idx": col_idx,
+                "slot": slot_key,
                 "base": None,
                 "scale": None,
                 # base를 컬럼 참조로 강제하고 싶을 때 config에서 base_ref: true 사용
@@ -365,7 +377,7 @@ class SensorProcessor:
                 po = self._parse_number_or_none(raw_po)
                 cfg["post_offset"] = float(po) if po is not None else 0.0
 
-            result[ch] = cfg
+            result[slot_key] = cfg
 
         return result
 

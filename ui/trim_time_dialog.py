@@ -26,9 +26,15 @@ def parse_datetime_safe(s: str) -> Optional[datetime]:
     return None
 
 
-def show_trim_time_dialog(parent, initial_value: Optional[str] = None) -> Optional[str]:
+def show_trim_time_dialog(
+    parent,
+    initial_value: Optional[str] = None,
+    *,
+    title: str = "변환본 시간 이후 삭제",
+    hint: str = "삭제할 시작 시간 (해당 시각부터 끝까지 삭제)",
+) -> Optional[str]:
     """
-    삭제 시작 시간 선택 다이얼로그.
+    날짜/시간 선택 다이얼로그.
     Returns: "YYYY-MM-DD HH:MM" 형식 문자열 또는 None(취소)
     """
     now = datetime.now()
@@ -39,7 +45,7 @@ def show_trim_time_dialog(parent, initial_value: Optional[str] = None) -> Option
     result = [None]  # mutable로 결과 전달
 
     win = tk.Toplevel(parent)
-    win.title("변환본 시간 이후 삭제")
+    win.title(title)
     win.geometry("320x160")
     win.resizable(False, False)
     win.transient(parent)
@@ -56,7 +62,7 @@ def show_trim_time_dialog(parent, initial_value: Optional[str] = None) -> Option
     main = ttk.Frame(win, padding=15)
     main.pack(fill="both", expand=True)
 
-    ttk.Label(main, text="삭제할 시작 시간 (해당 시각부터 끝까지 삭제)", font=("맑은 고딕", 9)).pack(anchor="w")
+    ttk.Label(main, text=hint, font=("맑은 고딕", 9)).pack(anchor="w")
 
     row = ttk.Frame(main)
     row.pack(fill="x", pady=(10, 5))

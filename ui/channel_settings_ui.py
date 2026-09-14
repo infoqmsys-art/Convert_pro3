@@ -5,6 +5,7 @@ from copy import deepcopy
 import pandas as pd
 from core.sensor_processor import MODE_META
 from core.sensor_processor import SensorProcessor
+from core.presets import PRESET_NAMES, CHANNEL_PRESETS, apply_preset_to_file_cfg
 
 
 def index_to_excel_col(idx):
@@ -143,6 +144,21 @@ class ChannelSettingsUI:
         file_cfg.setdefault("__nb_pvs_limit__", "")
 
         final_cfg = deepcopy(file_cfg)
+
+        for key in ("degreeX", "degreeY"):
+            merged = default_channel_config()
+            merged.update(final_cfg.get(key, {}) if isinstance(final_cfg.get(key), dict) else {})
+            if "mode" not in merged and "offset" in merged:
+                merged["mode"] = merged.get("offset", "PASS")
+            merged.setdefault("mode", "PASS")
+            merged.setdefault("base", "")
+            merged.setdefault("scale", "")
+            merged.setdefault("post_offset", "")
+            merged.setdefault("decimal", "")
+            merged.setdefault("label", "")
+            merged.setdefault("initial", "")
+            merged.pop("offset", None)
+            final_cfg[key] = merged
 
         for ch in range(8):
             key = f"CH{ch}"
@@ -283,9 +299,17 @@ class ChannelSettingsUI:
                 if df_full.empty:
                     return initial_values
                 
-                # 4. CH0~CH7 값 추출 (16~23열)
-                # 변환된 파일은 컬럼명이 있으므로 인덱스로 접근
-                # 원본 파일은 숫자 인덱스
+                # 4. 내장 degreeX/Y(13·14) + 외장 CH0~CH7(16~23)
+                for key, col_idx in (("degreeX", 13), ("degreeY", 14)):
+                    if col_idx < df_full.shape[1]:
+                        val = df_full.iloc[0, col_idx]
+                        if pd.notna(val) and str(val).strip():
+                            initial_values[key] = str(val).strip()
+                        else:
+                            initial_values[key] = ""
+                    else:
+                        initial_values[key] = ""
+
                 for ch in range(8):
                     col_idx = 16 + ch
                     if col_idx < df_full.shape[1]:
@@ -376,6 +400,7 @@ class ChannelSettingsUI:
         else:
             self._build_global_options(frame)
             self._build_note_section(frame, row=2)
+            self._build_preset_section(frame, row=3)
             self._build_channel_grid(frame)
 
         if self.is_nb:
@@ -654,12 +679,153 @@ class ChannelSettingsUI:
         # 참조를 저장하기 위해 인스턴스 변수로 저장
         self.note_text_widget = note_entry
 
+    def _build_preset_section(self, frame, row=3):
+        box = ttk.LabelFrame(frame, text="센서 프리셋", padding=10)
+        box.grid(row=row, column=0, columnspan=8, sticky="ew", pady=(0, 12))
+
+        rowf = tk.Frame(box, bg="white")
+        rowf.pack(fill="x")
+
+        tk.Label(
+            rowf, text="프리셋:", font=("맑은 고딕", 9), bg="white"
+        ).pack(side="left", padx=(0, 8))
+
+        default_name = PRESET_NAMES[0] if PRESET_NAMES else ""
+        self.preset_var = tk.StringVar(value=default_name)
+        combo = ttk.Combobox(
+            rowf,
+            textvariable=self.preset_var,
+            values=list(PRESET_NAMES),
+            width=22,
+            state="readonly",
+            font=("맑은 고딕", 9),
+        )
+        combo.pack(side="left", padx=(0, 8))
+
+        tk.Button(
+            rowf,
+            text="적용",
+            command=self._on_apply_preset,
+            font=("맑은 고딕", 9),
+            bg="#16A085",
+            fg="white",
+            activebackground="#138D75",
+            activeforeground="white",
+            relief="flat",
+            padx=12,
+            pady=2,
+            cursor="hand2",
+        ).pack(side="left", padx=(0, 12))
+
+        desc0 = CHANNEL_PRESETS.get(default_name, {}).get("desc", "")
+        self.preset_desc_label = tk.Label(
+            rowf,
+            text=desc0,
+            font=("맑은 고딕", 8),
+            fg="#7F8C8D",
+            bg="white",
+            wraplength=520,
+            justify="left",
+            anchor="w",
+        )
+        self.preset_desc_label.pack(side="left", fill="x", expand=True)
+
+        def _on_preset_selected(*_a):
+            name = self.preset_var.get()
+            self.preset_desc_label.config(
+                text=CHANNEL_PRESETS.get(name, {}).get("desc", "")
+            )
+
+        self.preset_var.trace_add("write", _on_preset_selected)
+
+    def _on_apply_preset(self):
+        name = (self.preset_var.get() or "").strip()
+        if not name:
+            return
+        try:
+            self.file_cfg = apply_preset_to_file_cfg(
+                self.file_cfg, name, keep_base=True
+            )
+        except KeyError:
+            messagebox.showerror("프리셋", f"알 수 없는 프리셋: {name}")
+            return
+
+        for key, slot in CHANNEL_PRESETS[name]["slots"].items():
+            ui = self.ch_vars.get(key)
+            if not ui:
+                continue
+            cfg = self.file_cfg.get(key, slot)
+            ui["mode"].set(cfg.get("mode", "PASS"))
+            ui["base"].set(str(cfg.get("base", "") or ""))
+            ui["scale"].set(str(cfg.get("scale", "") or ""))
+            ui["post_offset"].set(str(cfg.get("post_offset", "") or ""))
+            ui["decimal"].set(str(cfg.get("decimal", "") or ""))
+            ui["label"].set(str(cfg.get("label", "") or ""))
+            self.update_param_state(
+                ui["mode"].get(), ui["base_entry"], ui["scale_entry"]
+            )
+
+        messagebox.showinfo(
+            "프리셋 적용",
+            f"「{name}」을(를) 화면에 반영했습니다.\n"
+            "base는 기존 값이 있으면 유지됩니다. 저장을 눌러야 config에 반영됩니다.",
+        )
+
     def _build_channel_grid(self, frame):
-        # ---------------- 채널 설정 헤더 ----------------
-        # 헤더 정의 및 컬럼 너비 설정
         headers = ["채널", "모드", "base", "scale", "변환후+", "소수점", "센서명(label)", "초기치"]
-        col_widths = [16, 14, 10, 10, 8, 8, 20, 18]  # 각 열의 문자 너비 (채널: 칼럼+인덱스)
-        
+        col_widths = [18, 14, 10, 10, 8, 8, 20, 18]
+
+        for i in range(8):
+            frame.columnconfigure(i, weight=0)
+
+        # —— 로거 내장 경사 ——
+        tk.Label(
+            frame,
+            text="로거 내장 경사 (degreeX / degreeY · 인덱스 13·14)",
+            font=("맑은 고딕", 9, "bold"),
+            bg="#1A5276",
+            fg="white",
+            anchor="w",
+        ).grid(row=4, column=0, columnspan=8, sticky="ew", pady=(0, 4), padx=2)
+
+        for i, h in enumerate(headers):
+            tk.Label(
+                frame,
+                text=h,
+                font=("맑은 고딕", 9, "bold"),
+                bg="#D6EAF8",
+                fg="#2C3E50",
+                width=col_widths[i],
+                relief="flat",
+            ).grid(row=5, column=i, padx=2, pady=4, sticky="ew")
+
+        builtin = (
+            ("degreeX", 13, "내장 X"),
+            ("degreeY", 14, "내장 Y"),
+        )
+        for bi, (key, col_idx, short) in enumerate(builtin):
+            excel_col = index_to_excel_col(col_idx)
+            self._add_sensor_row(
+                frame,
+                row=6 + bi,
+                key=key,
+                cfg=self.file_cfg[key],
+                col_widths=col_widths,
+                channel_text=f"{short}\n(칼럼{excel_col}, 인덱스{col_idx})",
+                row_bg="#FFFFFF" if bi % 2 == 0 else "#EBF5FB",
+                init_key=key,
+            )
+
+        # —— 외장 AmountCH ——
+        tk.Label(
+            frame,
+            text="외장 센서 AmountCH0~7 (로거에 연결한 센서 · 인덱스 16~23)",
+            font=("맑은 고딕", 9, "bold"),
+            bg="#1E8449",
+            fg="white",
+            anchor="w",
+        ).grid(row=8, column=0, columnspan=8, sticky="ew", pady=(12, 4), padx=2)
+
         for i, h in enumerate(headers):
             tk.Label(
                 frame,
@@ -668,169 +834,148 @@ class ChannelSettingsUI:
                 bg="#ECF0F1",
                 fg="#2C3E50",
                 width=col_widths[i],
-                relief="flat"
-            ).grid(row=3, column=i, padx=2, pady=8, sticky="ew")
-        
-        # 컬럼 가중치 설정 (너비 맞추기)
-        for i in range(8):
-            frame.columnconfigure(i, weight=0)
+                relief="flat",
+            ).grid(row=9, column=i, padx=2, pady=4, sticky="ew")
 
-        # ---------------- 채널 설정 ----------------
         for ch in range(8):
-            row = 4 + ch
             key = f"CH{ch}"
-            cfg = self.file_cfg[key]
-
-            # 채널 행 배경색 (번갈아가며)
-            row_bg = "#FFFFFF" if ch % 2 == 0 else "#F8F9FA"
-            
-            decimal_var = tk.StringVar(value=str(cfg.get("decimal", "")))
-            mode_var = tk.StringVar(value=cfg["mode"])
-            label_var = tk.StringVar(value=str(cfg["label"]))
-
-            # 채널명 (엑셀 칼럼 + 0-based 인덱스 표시)
-            col_idx = 16 + ch  # CH0=16, CH1=17, ..., CH7=23
+            col_idx = 16 + ch
             excel_col = index_to_excel_col(col_idx)
-            channel_text = f"{key}\n(칼럼{excel_col}, 인덱스{col_idx})"
-            
-            channel_label = tk.Label(
-                frame, 
-                text=channel_text, 
-                font=("맑은 고딕", 8),
-                bg=row_bg,
-                fg="#2C3E50",
-                width=col_widths[0],
-                justify="center",
-                relief="flat"
-            )
-            channel_label.grid(row=row, column=0, padx=2, pady=2, sticky="nsew")
-
-            # 모드 (배경색을 위한 Frame으로 감싸기)
-            mode_frame = tk.Frame(frame, bg=row_bg)
-            mode_frame.grid(row=row, column=1, padx=2, pady=2, sticky="ew")
-            mode_cb = ttk.Combobox(
-                mode_frame,
-                textvariable=mode_var,
-                values=self.mode_list,
-                width=col_widths[1],
-                state="readonly",
-                font=("맑은 고딕", 9)
-            )
-            mode_cb.pack(fill="both", expand=True)
-            tooltip = ToolTip(
-                mode_cb,
-                MODE_META.get(mode_var.get(), MODE_META["PASS"])["desc"]
+            self._add_sensor_row(
+                frame,
+                row=10 + ch,
+                key=key,
+                cfg=self.file_cfg[key],
+                col_widths=col_widths,
+                channel_text=f"{key}\n(칼럼{excel_col}, 인덱스{col_idx})",
+                row_bg="#FFFFFF" if ch % 2 == 0 else "#F8F9FA",
+                init_key=ch,
             )
 
-            # base (배경색을 위한 Frame으로 감싸기)
-            base_frame = tk.Frame(frame, bg=row_bg)
-            base_frame.grid(row=row, column=2, padx=2, pady=2, sticky="ew")
-            base_var = tk.StringVar(value="" if cfg.get("base") is None else str(cfg["base"]))
-            base_entry = ttk.Entry(
-                base_frame, 
-                textvariable=base_var, 
-                width=col_widths[2],
-                font=("맑은 고딕", 9)
-            )
-            base_entry.pack(fill="both", expand=True)
+    def _add_sensor_row(self, frame, row, key, cfg, col_widths, channel_text, row_bg, init_key):
+        decimal_var = tk.StringVar(value=str(cfg.get("decimal", "")))
+        mode_var = tk.StringVar(value=cfg["mode"])
+        label_var = tk.StringVar(value=str(cfg["label"]))
 
-            # scale (배경색을 위한 Frame으로 감싸기)
-            scale_frame = tk.Frame(frame, bg=row_bg)
-            scale_frame.grid(row=row, column=3, padx=2, pady=2, sticky="ew")
-            scale_var = tk.StringVar(value="" if cfg.get("scale") is None else str(cfg["scale"]))
-            scale_entry = ttk.Entry(
-                scale_frame, 
-                textvariable=scale_var, 
-                width=col_widths[3],
-                font=("맑은 고딕", 9)
-            )
-            scale_entry.pack(fill="both", expand=True)
+        tk.Label(
+            frame,
+            text=channel_text,
+            font=("맑은 고딕", 8),
+            bg=row_bg,
+            fg="#2C3E50",
+            width=col_widths[0],
+            justify="center",
+            relief="flat",
+        ).grid(row=row, column=0, padx=2, pady=2, sticky="nsew")
 
-            # 변환후+(post_offset)
-            po_frame = tk.Frame(frame, bg=row_bg)
-            po_frame.grid(row=row, column=4, padx=2, pady=2, sticky="ew")
-            post_off_var = tk.StringVar(value="" if cfg.get("post_offset") in (None, "") else str(cfg["post_offset"]))
-            post_off_entry = ttk.Entry(
-                po_frame,
-                textvariable=post_off_var,
-                width=col_widths[4],
-                font=("맑은 고딕", 9),
-            )
-            post_off_entry.pack(fill="both", expand=True)
-            ToolTip(
-                post_off_entry,
-                "모드 계산 결과에 마지막으로 더하는 값(JSON: post_offset).\n비우면 0. PASS 포함 모든 모드에 적용.\n예: 보정량 +12.34",
-            )
+        mode_frame = tk.Frame(frame, bg=row_bg)
+        mode_frame.grid(row=row, column=1, padx=2, pady=2, sticky="ew")
+        mode_cb = ttk.Combobox(
+            mode_frame,
+            textvariable=mode_var,
+            values=self.mode_list,
+            width=col_widths[1],
+            state="readonly",
+            font=("맑은 고딕", 9),
+        )
+        mode_cb.pack(fill="both", expand=True)
+        tooltip = ToolTip(
+            mode_cb,
+            MODE_META.get(mode_var.get(), MODE_META["PASS"])["desc"],
+        )
 
-            on_mode_change = self._make_mode_change_handler(
-                mode_var,
-                base_entry,
-                scale_entry,
-                tooltip
-            )
+        base_frame = tk.Frame(frame, bg=row_bg)
+        base_frame.grid(row=row, column=2, padx=2, pady=2, sticky="ew")
+        base_var = tk.StringVar(value="" if cfg.get("base") is None else str(cfg["base"]))
+        base_entry = ttk.Entry(
+            base_frame,
+            textvariable=base_var,
+            width=col_widths[2],
+            font=("맑은 고딕", 9),
+        )
+        base_entry.pack(fill="both", expand=True)
 
-            mode_cb.bind("<<ComboboxSelected>>", on_mode_change)
-            mode_var.trace_add("write", on_mode_change)
+        scale_frame = tk.Frame(frame, bg=row_bg)
+        scale_frame.grid(row=row, column=3, padx=2, pady=2, sticky="ew")
+        scale_var = tk.StringVar(value="" if cfg.get("scale") is None else str(cfg["scale"]))
+        scale_entry = ttk.Entry(
+            scale_frame,
+            textvariable=scale_var,
+            width=col_widths[3],
+            font=("맑은 고딕", 9),
+        )
+        scale_entry.pack(fill="both", expand=True)
 
-            # 초기 상태
-            on_mode_change()
+        po_frame = tk.Frame(frame, bg=row_bg)
+        po_frame.grid(row=row, column=4, padx=2, pady=2, sticky="ew")
+        post_off_var = tk.StringVar(
+            value="" if cfg.get("post_offset") in (None, "") else str(cfg["post_offset"])
+        )
+        post_off_entry = ttk.Entry(
+            po_frame,
+            textvariable=post_off_var,
+            width=col_widths[4],
+            font=("맑은 고딕", 9),
+        )
+        post_off_entry.pack(fill="both", expand=True)
+        ToolTip(
+            post_off_entry,
+            "모드 계산 결과에 마지막으로 더하는 값(JSON: post_offset).\n비우면 0. PASS 포함 모든 모드에 적용.",
+        )
 
-            # 소수점 (배경색을 위한 Frame으로 감싸기)
-            decimal_frame = tk.Frame(frame, bg=row_bg)
-            decimal_frame.grid(row=row, column=5, padx=2, pady=2, sticky="ew")
-            decimal_entry = ttk.Entry(
-                decimal_frame, 
-                textvariable=decimal_var, 
-                width=col_widths[5],
-                font=("맑은 고딕", 9)
-            )
-            decimal_entry.pack(fill="both", expand=True)
+        on_mode_change = self._make_mode_change_handler(
+            mode_var, base_entry, scale_entry, tooltip
+        )
+        mode_cb.bind("<<ComboboxSelected>>", on_mode_change)
+        mode_var.trace_add("write", on_mode_change)
+        on_mode_change()
 
-            # label (배경색을 위한 Frame으로 감싸기)
-            label_frame = tk.Frame(frame, bg=row_bg)
-            label_frame.grid(row=row, column=6, padx=2, pady=2, sticky="ew")
-            label_entry = ttk.Entry(
-                label_frame, 
-                textvariable=label_var, 
-                width=col_widths[6],
-                font=("맑은 고딕", 9)
-            )
-            label_entry.pack(fill="both", expand=True)
+        decimal_frame = tk.Frame(frame, bg=row_bg)
+        decimal_frame.grid(row=row, column=5, padx=2, pady=2, sticky="ew")
+        ttk.Entry(
+            decimal_frame,
+            textvariable=decimal_var,
+            width=col_widths[5],
+            font=("맑은 고딕", 9),
+        ).pack(fill="both", expand=True)
 
-            # 초기치(initial) 표시
-            init_val = self.initial_values.get(ch, "")
-            if not init_val:
-                init_val = cfg.get("initial", "")
-            
-            if init_val and str(init_val).strip():
-                init_text = f"※ 초기치: {str(init_val).strip()}"
-            else:
-                init_text = ""
-            
-            init_label = tk.Label(
-                frame, 
-                text=init_text, 
-                foreground="#999",
-                font=("맑은 고딕", 8),
-                bg=row_bg,
-                anchor="w",
-                width=col_widths[7]
-            )
-            init_label.grid(row=row, column=7, padx=2, pady=2, sticky="ew")
-            
-            # 컬럼 가중치 설정
-            for col in range(8):
-                frame.columnconfigure(col, weight=0)
+        label_frame = tk.Frame(frame, bg=row_bg)
+        label_frame.grid(row=row, column=6, padx=2, pady=2, sticky="ew")
+        ttk.Entry(
+            label_frame,
+            textvariable=label_var,
+            width=col_widths[6],
+            font=("맑은 고딕", 9),
+        ).pack(fill="both", expand=True)
 
-            # UI 변수 저장
-            self.ch_vars[key] = {
-                "mode": mode_var,
-                "base": base_var,
-                "scale": scale_var,
-                "post_offset": post_off_var,
-                "decimal": decimal_var,
-                "label": label_var,
-            }
+        init_val = self.initial_values.get(init_key, "")
+        if not init_val:
+            init_val = cfg.get("initial", "")
+        init_text = (
+            f"※ 초기치: {str(init_val).strip()}"
+            if init_val and str(init_val).strip()
+            else ""
+        )
+        tk.Label(
+            frame,
+            text=init_text,
+            foreground="#999",
+            font=("맑은 고딕", 8),
+            bg=row_bg,
+            anchor="w",
+            width=col_widths[7],
+        ).grid(row=row, column=7, padx=2, pady=2, sticky="ew")
+
+        self.ch_vars[key] = {
+            "mode": mode_var,
+            "base": base_var,
+            "scale": scale_var,
+            "post_offset": post_off_var,
+            "decimal": decimal_var,
+            "label": label_var,
+            "base_entry": base_entry,
+            "scale_entry": scale_entry,
+        }
 
     def _build_footer_buttons(self, main):
         # ---------------- 버튼 영역 ----------------
@@ -1136,12 +1281,9 @@ class ChannelSettingsUI:
             new_cfg["__gen_interval__"] = int(self.gen_interval_var.get())
             new_cfg["__align_60__"] = bool(self.align_60_var.get())
 
-            # ---------------- CH 저장 ----------------
-            for ch in range(8):
-                key = f"CH{ch}"
+            # ---------------- 센서 슬롯 저장 (내장 degreeX/Y + 외장 CH0~7) ----------------
+            for key in ("degreeX", "degreeY", *[f"CH{ch}" for ch in range(8)]):
                 ui = self.ch_vars[key]
-
-                # initial 값은 절대 덮어쓰면 안됨 — 기존 값 유지
                 new_cfg[key] = {
                     "mode": ui["mode"].get().strip(),
                     "base": ui["base"].get().strip(),
@@ -1149,7 +1291,7 @@ class ChannelSettingsUI:
                     "post_offset": ui["post_offset"].get().strip(),
                     "decimal": ui["decimal"].get().strip(),
                     "label": ui["label"].get().strip(),
-                    "initial": self.file_cfg[key].get("initial", ""),
+                    "initial": self.file_cfg.get(key, {}).get("initial", ""),
                 }
 
         try:
