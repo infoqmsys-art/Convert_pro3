@@ -34,12 +34,12 @@ def _slot(
 CHANNEL_PRESETS: dict[str, dict[str, Any]] = {
     "관수구_경사균열": {
         "desc": (
-            "내장 X/Y·CH0 → SET(scale 0.05, 소수점 4). "
+            "내장 X·CH0 SET 0.05, 내장 Y SET 0.01, 소수점 4. "
             "원본 정리 후 적용하면 초기치가 base에 들어감. CH1~7은 PASS."
         ),
         "slots": {
             "degreeX": _slot("SET", label="내장ELX", decimal="4", scale="0.05"),
-            "degreeY": _slot("SET", label="내장ELY", decimal="4", scale="0.05"),
+            "degreeY": _slot("SET", label="내장ELY", decimal="4", scale="0.01"),
             "CH0": _slot("SET", label="균열", decimal="4", scale="0.05"),
             "CH1": _slot("PASS"),
             "CH2": _slot("PASS"),
