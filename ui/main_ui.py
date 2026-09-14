@@ -464,8 +464,17 @@ class MainUI:
     # 로그 출력
     # ======================================================
     def append_log(self, text):
-        """상태 메시지 추가 (사용자 친화적 변환)"""
+        """상태 메시지 추가 (사용자 친화적 변환). 변환 스레드에서는 after로 넘김."""
         from datetime import datetime
+        import threading
+
+        try:
+            if threading.current_thread() is not threading.main_thread():
+                self.root.after(0, lambda t=text: self.append_log(t))
+                return
+        except Exception:
+            return
+
         try:
             # 개발자용 로그를 사용자 친화적 메시지로 변환
             user_message = self._convert_to_user_message(text)
@@ -480,7 +489,7 @@ class MainUI:
             lines = self.log_box.get("1.0", "end").split("\n")
             if len(lines) > 50:
                 self.log_box.delete("1.0", f"{len(lines) - 50}.0")
-        except:
+        except Exception:
             pass
     
     def _convert_to_user_message(self, log_text):

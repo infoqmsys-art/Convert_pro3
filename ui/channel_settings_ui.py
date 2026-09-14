@@ -95,9 +95,9 @@ class ChannelSettingsUI:
 
         self.ch_vars = {}
 
-        # Toplevel UI
+        # Toplevel UI — grab_set 하지 않음.
+        # 변환 스레드의 로그/상태 갱신과 모달이 겹치면 Tk가 먹통이 된다.
         self.win = tk.Toplevel(self.root)
-        self.win.grab_set()
 
         # 파일 설정 로딩
         self._load_file_config()
@@ -115,10 +115,12 @@ class ChannelSettingsUI:
     # 파일 설정 로딩
     # ======================================================
     def _load_file_config(self):
-        try:
-            self.config.load(quiet=True)
-        except Exception:
-            pass
+        converting = bool(getattr(self.controller, "is_converting", False))
+        if not converting:
+            try:
+                self.config.load(quiet=True)
+            except Exception:
+                pass
         try:
             file_cfg = self.tree.get_file_config(
                 self.company, self.site, self.folder, self.filename
@@ -209,6 +211,8 @@ class ChannelSettingsUI:
             dict: {0: "값0", 1: "값1", ... 7: "값7"} 또는 {}
         """
         initial_values = {}
+        if getattr(self.controller, "is_converting", False):
+            return initial_values
         
         try:
             from utils.convert_paths import resolve_convert_out_path

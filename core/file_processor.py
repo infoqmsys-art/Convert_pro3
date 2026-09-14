@@ -162,6 +162,16 @@ class FileProcessor:
         if file_cfg.get("__nb_mode__"):
             return self._convert_neo_blast_file(company, site, folder, filename, folder_cfg, file_cfg)
 
+        site_cfg = self.config.data.get(company, {}).get(site, {})
+        if isinstance(site_cfg, dict) and site_cfg.get("__require_sensor_config__"):
+            from core.sensor_processor import file_has_sensor_setup
+            if not file_has_sensor_setup(file_cfg):
+                self.logger.log(
+                    f"센서 미설정 → 스킵: {company}/{site}/{folder}/{filename}",
+                    level="DEBUG",
+                )
+                return "skipped"
+
         src_path = os.path.join(folder_cfg["__absolute_path__"], filename)
 
         if not os.path.exists(src_path):

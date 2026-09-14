@@ -324,6 +324,21 @@ class TreeManager:
         self.logger.log(
             f"[Tree] 현장 시간차단(미래시각 행 제외): {company}/{site} → {bool(enabled)}"
         )
+
+    def get_site_require_sensor_config(self, company: str, site: str) -> bool:
+        d = self.cfg.data.get(company, {}).get(site, {})
+        if not isinstance(d, dict):
+            return False
+        return bool(d.get("__require_sensor_config__", False))
+
+    def set_site_require_sensor_config(self, company: str, site: str, enabled: bool) -> None:
+        if company not in self.cfg.data or site not in self.cfg.data[company]:
+            raise KeyError(f"현장 없음: {company}/{site}")
+        self.cfg.data[company][site]["__require_sensor_config__"] = bool(enabled)
+        self.cfg.save()
+        self.logger.log(
+            f"[Tree] 현장 센서미설정 변환스킵: {company}/{site} → {bool(enabled)}"
+        )
     
     def set_folder_note(self, company, site, folder, note):
         """폴더 비고 설정 (Site 레벨 포함)"""

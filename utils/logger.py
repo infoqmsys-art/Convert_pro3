@@ -68,27 +68,25 @@ class Logger:
 
         timestamp = self._now()
         text = f"[{timestamp}] [{level}] {msg}"
+        cb = None
 
         with self.lock:
-            # 콘솔 출력
             try:
                 print(text)
             except UnicodeEncodeError:
-                # Windows cp949 콘솔 등에서 이모지/특수문자 출력 시 크래시 방지
                 safe = text.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(
                     sys.stdout.encoding or "utf-8", errors="replace"
                 )
                 print(safe)
-
-            # 파일 기록
             self._write_file(msg, level, timestamp)
+            cb = self.ui_callback
 
-            # UI 출력
-            if self.ui_callback:
-                try:
-                    self.ui_callback(text)
-                except Exception:
-                    pass
+        # 락 밖에서 호출 — UI 콜백이 Tk를 건드려도 로거 락과 교착하지 않음
+        if cb:
+            try:
+                cb(text)
+            except Exception:
+                pass
 
     # ======================================================
     # Internal

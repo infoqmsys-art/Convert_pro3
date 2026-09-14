@@ -84,7 +84,7 @@ class FolderContextMenu:
             self.menu.add_command(label="폴더 업로드", command=self._upload_folder)
         elif node_type == "site":
             self.menu.add_separator()
-            self.menu.add_command(label="시간차단…", command=self._edit_site_time_block)
+            self.menu.add_command(label="현장 설정…", command=self._edit_site_time_block)
         # site / company / summary 등은 기본 메뉴(비고 편집 + 삭제)만 사용 — site는 시간차단 추가
 
         self.menu.add_separator()
@@ -171,8 +171,13 @@ class FolderContextMenu:
         except Exception:
             initial = False
 
+        try:
+            initial_sensor = self.app.tree.get_site_require_sensor_config(company, site)
+        except Exception:
+            initial_sensor = False
+
         dlg = tk.Toplevel(self.root)
-        dlg.title("시간차단")
+        dlg.title("현장 설정")
         dlg.resizable(False, False)
         dlg.transient(self.root)
         dlg.grab_set()
@@ -210,13 +215,35 @@ class FolderContextMenu:
             font=("맑은 고딕", 9),
         ).pack(anchor="w", pady=(0, 12))
 
+        var_sensor = tk.BooleanVar(value=initial_sensor)
+        tk.Checkbutton(
+            fr,
+            text="센서 미설정 파일은 변환하지 않음 (전부 PASS면 스킵)",
+            variable=var_sensor,
+            font=("맑은 고딕", 9),
+        ).pack(anchor="w", pady=(0, 12))
+
+        tk.Label(
+            fr,
+            text=(
+                "관수구처럼 로거는 다 올려 두고, 프리셋·base를 넣은 파일만\n"
+                "변환하고 싶을 때 켭니다."
+            ),
+            justify="left",
+            font=("맑은 고딕", 8),
+            fg="#666",
+            wraplength=420,
+        ).pack(anchor="w", pady=(0, 12))
+
         btn_row = tk.Frame(fr)
         btn_row.pack(fill="x")
 
         def apply_and_close():
             val = var.get()
+            val_sensor = var_sensor.get()
             try:
                 self.app.tree.set_site_time_block_future(company, site, val)
+                self.app.tree.set_site_require_sensor_config(company, site, val_sensor)
             except Exception as e:
                 messagebox.showerror("오류", str(e), parent=dlg)
                 return
@@ -225,9 +252,12 @@ class FolderContextMenu:
                 self.app.ui.refresh_tree()
             except Exception:
                 pass
+            parts = []
+            parts.append("시간차단 " + ("켜짐" if val else "꺼짐"))
+            parts.append("센서 미설정 스킵 " + ("켜짐" if val_sensor else "꺼짐"))
             messagebox.showinfo(
                 "저장 완료",
-                "현장 시간차단을 켰습니다." if val else "현장 시간차단을 껐습니다.",
+                " / ".join(parts),
                 parent=self.root,
             )
 

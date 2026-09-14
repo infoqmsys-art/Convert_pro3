@@ -124,6 +124,20 @@ SENSOR_SLOTS = (
 SENSOR_SLOT_KEYS = tuple(k for k, _ in SENSOR_SLOTS)
 SENSOR_SLOT_COL = {k: c for k, c in SENSOR_SLOTS}
 
+
+def file_has_sensor_setup(file_cfg: dict) -> bool:
+    """degreeX/Y·CH0~7 중 PASS가 아닌 모드가 하나라도 있으면 True."""
+    if not isinstance(file_cfg, dict):
+        return False
+    for key, _ in SENSOR_SLOTS:
+        raw = file_cfg.get(key, {})
+        if not isinstance(raw, dict):
+            continue
+        mode = str(raw.get("mode") or raw.get("offset") or "PASS").strip()
+        if mode and mode.upper() != "PASS":
+            return True
+    return False
+
 # 대소문자 무관 모드 조회용 (upper → 원본 키)
 _MODE_UPPER_MAP = {k.upper(): k for k in MODE_META}
 
