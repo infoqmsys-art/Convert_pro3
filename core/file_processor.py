@@ -203,18 +203,36 @@ class FileProcessor:
             mtime_unchanged = False
 
         # ── Fast path A: 채움 없음 + 원본 mtime 미변경 → 즉시 스킵 ──
-        # (__align_60__: 10분 변환본은 그대로 두고 _60.csv만 동기화할 수 있음)
+        # mtime만 믿으면 변환본만 다시 저장된 경우(정리·엑셀·재저장)에
+        # 원본 끝 시각이 더 최신이어도 스킵된다 → peek로 한 번 확인.
         if mtime_unchanged and not interval_int and not extend_to_now:
-            if align_60 and out_exists:
-                if self._sync_align60_from_main(
-                    company, site, folder, filename, out_path
-                ):
-                    return "converted"
-            self.logger.log(
-                f"원본 미변경 → 스킵: {company}/{site}/{folder}/{filename}",
-                level="DEBUG",
+            from utils.csv_last_row import peek_last_timestamp
+
+            src_last = peek_last_timestamp(src_path)
+            out_last = peek_last_timestamp(out_path)
+            source_newer = (
+                src_last is not None
+                and out_last is not None
+                and pd.notna(src_last)
+                and pd.notna(out_last)
+                and src_last > out_last
             )
-            return "skipped"
+            if not source_newer:
+                if align_60 and out_exists:
+                    if self._sync_align60_from_main(
+                        company, site, folder, filename, out_path
+                    ):
+                        return "converted"
+                self.logger.log(
+                    f"원본 미변경 → 스킵: {company}/{site}/{folder}/{filename}",
+                    level="DEBUG",
+                )
+                return "skipped"
+            self.logger.log(
+                f"mtime은 그대로지만 원본 끝({src_last}) > 변환본 끝({out_last}) "
+                f"→ 변환 진행 ({company}/{site}/{folder}/{filename})",
+                level="INFO",
+            )
 
         # ── Fast path B: 누락보충 ON + mtime 미변경 ──
         # 원본 전체 scan / 센서 파이프라인 생략. peek로 내용만 확인 후
