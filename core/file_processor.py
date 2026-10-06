@@ -277,6 +277,9 @@ class FileProcessor:
                         if "__filled__" in tail_df.columns:
                             tail_df = tail_df.drop(columns=["__filled__"])
                         tail_df.columns = range(tail_df.shape[1])
+                        tail_df = self._regen_time_only(
+                            tail_df, file_cfg, company, site, folder, filename
+                        )
                         self._save_append(tail_df, out_path, interval_min=0)
                         if align_60:
                             self._sync_align60_from_main(
@@ -364,6 +367,9 @@ class FileProcessor:
                         if "__filled__" in tail_df.columns:
                             tail_df = tail_df.drop(columns=["__filled__"])
                         tail_df.columns = range(tail_df.shape[1])
+                        tail_df = self._regen_time_only(
+                            tail_df, file_cfg, company, site, folder, filename
+                        )
                         self._save_append(tail_df, out_path, interval_min=0)
                         if align_60:
                             self._sync_align60_from_main(
@@ -619,6 +625,8 @@ class FileProcessor:
                     except Exception as e:
                         self.logger.log(f"⚠️ 마지막~현재 구간 채움 스킵: {e}", level="WARN")
 
+                if added:
+                    df = self._regen_time_only(df, file_cfg, company, site, folder, filename)
                 fill_applied = True
                 self.logger.log(f"누락 보충 완료 (추가 {added}행)", level="DEBUG")
             except Exception as e:
@@ -751,14 +759,32 @@ class FileProcessor:
             self.logger.log(f"   상세: {traceback.format_exc()}", level="ERROR")
         return None, None
 
+    @staticmethod
+    def _max_comma_fields(lines) -> int:
+        """줄마다 쉼표 칸 수 중 최대. 로거 펌웨어가 바뀌어 뒤 행만 넓어진 파일용."""
+        best = 0
+        for line in lines:
+            n = line.count(",") + 1 if line.strip() else 0
+            if n > best:
+                best = n
+        return best
+
     def _read_source_csv(self, src_path):
         """원본 CSV를 DataFrame으로 읽기. 쉼표+C엔진 우선, 실패 시 python 폴백."""
         if not os.path.exists(src_path) or os.path.getsize(src_path) <= 0:
             return pd.DataFrame()
+        # 첫 줄보다 넓은 행은 C엔진이 bad line 으로 버리므로 열 수를 미리 맞춘다.
+        try:
+            with open(src_path, "r", encoding="utf-8-sig", errors="ignore") as f:
+                ncols = self._max_comma_fields(f)
+        except OSError:
+            ncols = 0
+        names = list(range(ncols)) if ncols >= 2 else None
         try:
             df = pd.read_csv(
                 src_path,
                 header=None,
+                names=names,
                 sep=",",
                 engine="c",
                 on_bad_lines="skip",
@@ -773,6 +799,7 @@ class FileProcessor:
                 df = pd.read_csv(
                     src_path,
                     header=None,
+                    names=names,
                     sep=",",
                     engine="c",
                     on_bad_lines="skip",
@@ -802,10 +829,12 @@ class FileProcessor:
         if not lines:
             return pd.DataFrame()
         buf = "\n".join(lines)
+        ncols = self._max_comma_fields(lines)
         try:
             df = pd.read_csv(
                 StringIO(buf),
                 header=None,
+                names=list(range(ncols)) if ncols >= 2 else None,
                 sep=",",
                 engine="c",
                 on_bad_lines="skip",
@@ -1315,6 +1344,24 @@ class FileProcessor:
                     pass
         except Exception:
             pass
+
+    def _regen_time_only(self, df, file_cfg, company, site, folder, filename):
+        """누락보충으로 붙인 행에서 EL_GWAN·CR_GWAN 슬롯을 그 시각 값으로 다시 계산."""
+        from core.sensor_processor import SENSOR_SLOTS
+
+        if df is None or df.empty:
+            return df
+        modes = {
+            str((file_cfg.get(slot) or {}).get("mode") or "").strip().upper()
+            for slot, _col in SENSOR_SLOTS
+            if isinstance(file_cfg.get(slot), dict)
+        }
+        if not modes & set(self.sensor.TIME_ONLY_MODES):
+            return df
+        cfg = dict(file_cfg)
+        cfg["__file_key__"] = f"{company}/{site}/{folder}/{filename}"
+        df = self.sensor.regen_time_only(df.copy(), cfg)
+        return self.apply_decimal(df, cfg)
 
     def apply_decimal(self, df, file_cfg):
         """슬롯별 소수점 설정 적용 (degreeX/Y + CH0~7)."""

@@ -358,8 +358,8 @@ class ChannelSettingsUI:
         return str(raw or "").strip()
 
     def _fill_set_base_if_empty(self, key, mode, base_var):
-        """SET·EL_GWAN이고 base가 비었으면 초기치를 한 번 넣는다. 있는 값은 덮지 않음."""
-        if (mode or "").strip().upper() not in ("SET", "EL_GWAN"):
+        """SET·EL_GWAN·CR_GWAN이고 base가 비었으면 초기치를 한 번 넣는다. 있는 값은 덮지 않음."""
+        if (mode or "").strip().upper() not in ("SET", "EL_GWAN", "CR_GWAN"):
             return
         if (base_var.get() or "").strip():
             return
@@ -1178,6 +1178,7 @@ class ChannelSettingsUI:
                     ("CHANG_SM2", "0-based 8번 행(인덱스 8, 9번째 행)·해당 채널 열 셀값 × base\n→ 그 값을 열 전체에 동일 적용. base=0.98 → 0.98배, 비면 1\n데이터 9행 미만이면 NaN. scale 미사용"),
                     ("CR",        "균열계 가라 (누적 drift)\n5% 확률로 ±0.0001씩 누적 이동\nbase = 시작값"),
                     ("CR_TAEAM",  "TAEAM 균열계 가라\nCR과 동일, 누적 drift 모델\nbase = 시작값"),
+                    ("CR_GWAN",   "인접건물 균열 가라 (관수구 기본)\n- 원값 무시\n- CR처럼 0.0001 단위 계단 + 한 시점만 ±0.0001~0.0002 튀었다 돌아옴(CR보다 조금 더)\n- 센서마다 다르고, 같은 시각은 재변환해도 같은 값\n- 변동 상한 약 0.0008~0.0016\nbase=초기치, scale=진폭 배율(비우면 1), 소수점 4"),
                     ("FM",        "유량계 가라 (carry 이어 받기)\n월~토 06~18시 사이에만 증가\nbase = 시작값, scale = 시간당 증가량"),
                     ("RA",        "레일변위계 가라\n행별 미세 떨림 위주(명시적 하락·상승은 매우 희박, 기본 하락 ~행당 0.002%)\n고급: ra_down_prob(0=하락스텝 없음), ra_up_prob, ra_settle(월간 침하, 기본 0)\nbase = 시작값, scale = 행별 노이즈 진폭 (기본 0.015)"),
                     ("L-QM",      "하중계 가라 (점진적 감소 + 소수점 2자리 랜덤)\n결과 = base + 선형감소 + uniform(-scale, scale)\nbase  = 시작 하중값 (예: 2281)\nscale = 노이즈 폭 (기본 1.0 → ±1.0 kg 수준)\n소수점 자리수는 채널설정 소수점 필드에서 2 입력\n고급 옵션:\n  lqm_daily_drift   : 하루 감소량 (기본 -0.5)\n  lqm_rows_per_day  : 하루 행 수 (기본 144 = 10분간격)"),

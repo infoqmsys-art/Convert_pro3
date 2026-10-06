@@ -29,6 +29,7 @@ SensorProcessor (Convert Pro 3) - Column-based Engine
   EL_TAEAM / EL_STATION / EL_TUNNEL / EL_NEW  base + 노이즈
   EL_GWAN    base + 시각·파일 해시 기반 변동 (재변환 동일값, 센서마다 다름)
   CR / CR_TAEAM        BASE에 미세 노이즈만 살짝 쌓인 것처럼(균열계 가라)
+  CR_GWAN    CR 비슷 + 한 시점 튐 조금 더 (시각·파일 해시, 재변환 동일값)
   FM                   유량 누적 (carry 이어감)
   RA                   침하 누적
 
@@ -99,6 +100,7 @@ MODE_META = {
     "EL_TUNNEL":  {"use_base": True,  "use_scale": False, "ref": False, "desc": "터널 경사 가라 (EL_STATION과 동일)"},
     "CR":         {"use_base": True,  "use_scale": False, "ref": False, "desc": "균열계 가라 (BASE 주변 미세 노이즈가 살짝 누적)"},
     "CR_TAEAM":   {"use_base": True,  "use_scale": False, "ref": False, "desc": "CR_TAEAM 가라 (저확률 미세 노이즈 누적)"},
+    "CR_GWAN":    {"use_base": True,  "use_scale": True,  "ref": False, "desc": "CR_GWAN: 인접건물 균열 가라. CR 계단 + 한 시점 ±0.0001 튐 조금 더, 재변환 동일값, 센서별 다름"},
     "FM":         {"use_base": True,  "use_scale": False, "ref": False, "desc": "유량계 가라 (carry 이어감, 월~토 06~18시)"},
     "RA":         {"use_base": True,  "use_scale": True,  "ref": False, "desc": "레일변위 가라 (미세 떨림 위주, 하락·침하 경향 최소)"},
     "L-QM":       {"use_base": True,  "use_scale": True,  "ref": False, "desc": "하중계 가라 (base 기준 점진적 감소 + 소수점 2자리 랜덤 노이즈)"},
@@ -311,6 +313,30 @@ class SensorProcessor:
                 level="DEBUG"
             )
 
+        return df
+
+    TIME_ONLY_MODES = ("EL_GWAN", "CR_GWAN")
+
+    def regen_time_only(self, df: pd.DataFrame, file_cfg: dict) -> pd.DataFrame:
+        """
+        누락보충 행용. 시각·센서만으로 값이 정해지는 모드(TIME_ONLY_MODES) 슬롯만 다시 계산한다.
+        이런 슬롯은 원값을 안 보므로 '이전 행 복사' 대신 그 시각 값을 넣어야 재변환 결과와 같다.
+        다른 슬롯은 건드리지 않는다.
+        """
+        if df is None or df.empty or df.shape[1] < 24:
+            return df
+        channels = self._load_channels(file_cfg)
+        for _slot, cfg in channels.items():
+            if cfg["mode"] not in self.TIME_ONLY_MODES:
+                continue
+            method = getattr(self, f"generate_{cfg['mode']}")
+            out = pd.to_numeric(method(df, cfg), errors="coerce").astype(float)
+            try:
+                out = out + float(cfg.get("post_offset") or 0.0)
+            except (TypeError, ValueError):
+                pass
+            col_name = df.columns[cfg["col_idx"]]
+            df[col_name] = out.to_numpy()
         return df
 
     def process_gara_only(self, df: pd.DataFrame, file_cfg: dict) -> pd.DataFrame:
@@ -1708,6 +1734,43 @@ class SensorProcessor:
         v1 = cls._gwan_uniform(seed, salt, k0i + 1) * 2.0 - 1.0
         return v0 + (v1 - v0) * w
 
+    def _gwan_inputs(self, df: pd.DataFrame, cfg: dict) -> tuple[float, float, np.ndarray]:
+        """(base, scale 배율, EPOCH 기준 시간[h]) — EL_GWAN·CR_GWAN 공통."""
+        base = self._resolve_base(df, cfg)
+        if isinstance(base, pd.Series):
+            base = float(pd.to_numeric(base.iloc[0], errors="coerce"))
+        else:
+            base = float(base)
+        if not np.isfinite(base):
+            base = 0.0
+
+        ns = self._resolve_scale(cfg, default=1.0)
+        try:
+            ns = float(ns) if not isinstance(ns, str) else 1.0
+        except Exception:
+            ns = 1.0
+        if not np.isfinite(ns) or ns < 0.0:
+            ns = 1.0
+
+        n = len(df)
+        if n == 0:
+            return base, ns, np.zeros(0, dtype=float)
+        try:
+            ts = pd.to_datetime(df.iloc[:, 0], errors="coerce", format="mixed")
+        except TypeError:
+            ts = pd.to_datetime(df.iloc[:, 0], errors="coerce")
+        try:
+            if getattr(ts.dt, "tz", None) is not None:
+                ts = ts.dt.tz_localize(None)
+        except Exception:
+            pass
+        ts = ts.ffill().bfill()
+        if ts.isna().all():
+            t_h = np.arange(n, dtype=float)
+        else:
+            t_h = ((ts - self._GWAN_EPOCH) / pd.Timedelta(hours=1)).to_numpy(dtype=float)
+        return base, ns, t_h
+
     @staticmethod
     def _gwan_seed(cfg: dict, base: float) -> int:
         import hashlib
@@ -1735,40 +1798,10 @@ class SensorProcessor:
         L=1000mm 기준 0.004° ≈ 0.07mm 로 관리기준 1차 ±0.5mm 보다 한참 작다.
         scale: 모든 진폭 배율(비우면 1, 0 이면 base 고정).
         """
-        base = self._resolve_base(df, cfg)
-        if isinstance(base, pd.Series):
-            base = float(pd.to_numeric(base.iloc[0], errors="coerce"))
-        else:
-            base = float(base)
-        if not np.isfinite(base):
-            base = 0.0
-
-        ns = self._resolve_scale(cfg, default=1.0)
-        try:
-            ns = float(ns) if not isinstance(ns, str) else 1.0
-        except Exception:
-            ns = 1.0
-        if not np.isfinite(ns) or ns < 0.0:
-            ns = 1.0
-
+        base, ns, t_h = self._gwan_inputs(df, cfg)
         n = len(df)
         if n == 0 or ns == 0.0:
             return pd.Series(np.full(n, base), index=df.index, dtype=float)
-
-        try:
-            ts = pd.to_datetime(df.iloc[:, 0], errors="coerce", format="mixed")
-        except TypeError:
-            ts = pd.to_datetime(df.iloc[:, 0], errors="coerce")
-        try:
-            if getattr(ts.dt, "tz", None) is not None:
-                ts = ts.dt.tz_localize(None)
-        except Exception:
-            pass
-        ts = ts.ffill().bfill()
-        if ts.isna().all():
-            t_h = np.arange(n, dtype=float)
-        else:
-            t_h = ((ts - self._GWAN_EPOCH) / pd.Timedelta(hours=1)).to_numpy(dtype=float)
 
         seed = self._gwan_seed(cfg, base)
         prof = np.random.default_rng(seed)
@@ -1811,6 +1844,58 @@ class SensorProcessor:
         lim = cap * ns
         delta = lim * np.tanh(delta / lim)
         return pd.Series(base + delta, index=df.index, dtype=float)
+
+    def generate_CR_GWAN(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
+        """
+        CR_GWAN: 인접건물 균열계 가라. 원값은 읽지 않는다.
+
+        CR 처럼 base 에서 0.0001 단위로 가끔 한 칸씩 옮겨 다니는 계단 모양에,
+        한 시점만 ±0.0001(가끔 0.0002) 튀었다 돌아오는 값을 조금 섞는다.
+        EL_GWAN 과 같이 시각·센서로 값이 정해져 재변환해도 같고, 센서마다 다르다.
+
+        Δ 구성 (scale=1 기준, 원값 단위):
+        - 계단: 저주파 2단(매듭 6~12일 / 4~7주) 비주기 변동을 상한 0.0008~0.0016 로
+          tanh 제한한 뒤 0.0001 단위로 자름 → CR 처럼 며칠에 한 칸씩 이동
+        - 한 시점 튐: 센서별 시간당 0.5~1.5%, 크기 0.0001(85%)/0.0002
+        값이 바뀌는 시간 비율은 CR(약 1%)보다 조금 많은 2~4% 정도.
+        scale: 모든 진폭 배율(비우면 1, 0 이면 base 고정).
+        """
+        base, ns, t_h = self._gwan_inputs(df, cfg)
+        n = len(df)
+        if n == 0 or ns == 0.0:
+            return pd.Series(np.full(n, base), index=df.index, dtype=float)
+
+        seed = self._gwan_seed(cfg, base)
+        prof = np.random.default_rng(seed)
+
+        octaves = (
+            (prof.uniform(150.0, 300.0), prof.uniform(0.00010, 0.00030)),
+            (prof.uniform(700.0, 1200.0), prof.uniform(0.00020, 0.00050)),
+        )
+        blip_p = prof.uniform(0.005, 0.015)
+        cap = prof.uniform(0.0008, 0.0016)
+
+        t0 = np.zeros(1, dtype=float)
+        slow = np.zeros(n, dtype=float)
+        for i, (spacing, amp) in enumerate(octaves):
+            salt = 401 + i
+            slow += amp * (
+                self._gwan_value_noise(seed, salt, t_h, spacing)
+                - self._gwan_value_noise(seed, salt, t0, spacing)[0]
+            )
+        tick = 0.0001 * ns
+        lim = cap * ns
+        step = np.round(lim * np.tanh(slow * ns / lim) / tick) * tick
+
+        minute_key = np.round(t_h * 60.0).astype(np.int64)
+        ub = self._gwan_uniform(seed, 503, minute_key)
+        us = self._gwan_uniform(seed, 504, minute_key)
+        blip = np.where(
+            ub < blip_p,
+            np.where(us < 0.5, -1.0, 1.0) * np.where(us % 0.5 < 0.425, 1.0, 2.0) * tick,
+            0.0,
+        )
+        return pd.Series(base + step + blip, index=df.index, dtype=float)
 
     def generate_EL_STATION(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
         """
