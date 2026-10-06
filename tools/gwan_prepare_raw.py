@@ -7,6 +7,8 @@
 - 09-01 00:00 이전 행은 지운다.
 - 첫 행이 09-01 00:00 보다 늦으면, 첫 행을 본떠 09-01 00:00 부터 매시간 행을 앞에 넣는다.
   EL_GWAN·CR_GWAN 은 원값을 안 보므로 시각만 있으면 된다.
+- 시각을 읽을 수 없는 줄(통신 오류로 앞부분이 잘린 조각 등)은 지운다. 헤더 첫 줄은 남긴다.
+- 시각은 그 시간 정각으로 맞춘다(02:01 → 02:00). 같은 시간에 둘 이상이면 정각에 가까운 줄만 남긴다.
 - --move-converted: 대상 변환본(및 _60 사본)을 같은 폴더 옆 백업 폴더로 옮겨 처음부터 다시 변환되게 한다.
 대상: config 의 SAEGIL / 관수구 / SAEGL-2026 에서 degreeX 가 EL_GWAN 인 파일. Convert Pro 는 닫고 돌린다.
 """
@@ -39,8 +41,9 @@ def gwan_targets(config_data: dict) -> list[str]:
     )
 
 
-def plan_file(path: str, cutoff: datetime = CUTOFF) -> tuple[list[str], int, int]:
-    """(새 줄 목록, 지운 행 수, 앞에 넣은 행 수). 바꿀 게 없으면 지운·넣은 행이 0."""
+def plan_file(path: str, cutoff: datetime = CUTOFF) -> tuple[list[str], dict]:
+    """(새 줄 목록, 건수). 건수: dropped(09-01 이전) added(앞에 넣음) broken(시각 없음)
+    aligned(정시로 맞춤) dup(같은 시간 중복 삭제). 모두 0 이면 바꿀 게 없다."""
     with open(path, "r", encoding="utf-8-sig", newline="") as f:
         lines = f.read().splitlines()
     head: list[str] = []
@@ -48,25 +51,51 @@ def plan_file(path: str, cutoff: datetime = CUTOFF) -> tuple[list[str], int, int
     if lines and FileProcessor._parse_source_line_ts(lines[0]) is None:
         head, body = lines[:1], lines[1:]
 
-    kept, dropped = [], 0
+    n = {"dropped": 0, "added": 0, "broken": 0, "aligned": 0, "dup": 0}
+    slots: dict[datetime, tuple[timedelta, str]] = {}
     for line in body:
-        ts = FileProcessor._parse_source_line_ts(line) if line.strip() else None
-        if ts is not None and ts < cutoff:
-            dropped += 1
-        else:
-            kept.append(line)
+        if not line.strip():
+            continue
+        ts = FileProcessor._parse_source_line_ts(line)
+        if ts is None:
+            n["broken"] += 1
+            continue
+        slot = ts.replace(minute=0, second=0, microsecond=0)
+        if slot < cutoff:
+            n["dropped"] += 1
+            continue
+        ts_text, rest = line.split(",", 1)
+        if ts != slot:
+            fmt = "%Y-%m-%d %H:%M:%S" if ts_text.strip().count(":") == 2 else "%Y-%m-%d %H:%M"
+            line = f"{slot.strftime(fmt)},{rest}"
+        dist = ts - slot
+        prev = slots.get(slot)
+        if prev is not None:
+            n["dup"] += 1
+            if prev[0] <= dist:
+                continue
+        slots[slot] = (dist, line)
+    n["aligned"] = sum(1 for d, _l in slots.values() if d)
+    kept = [slots[s][1] for s in sorted(slots)]
 
-    first = next((ln for ln in kept if FileProcessor._parse_source_line_ts(ln)), None)
     added: list[str] = []
-    if first:
-        first_ts = FileProcessor._parse_source_line_ts(first)
-        ts_text, rest = first.split(",", 1)
+    if kept:
+        first_ts = min(slots)
+        ts_text, rest = kept[0].split(",", 1)
         fmt = "%Y-%m-%d %H:%M:%S" if ts_text.strip().count(":") == 2 else "%Y-%m-%d %H:%M"
         t = cutoff
-        while t + timedelta(minutes=30) < first_ts:
+        while t < first_ts:
             added.append(f"{t.strftime(fmt)},{rest}")
             t += timedelta(hours=1)
-    return head + added + kept, dropped, len(added)
+    n["added"] = len(added)
+    return head + added + kept, n
+
+
+def describe(n: dict) -> str:
+    return (
+        f"09-01 이전 {n['dropped']}행 삭제, 앞에 {n['added']}행 추가, 깨진 줄 {n['broken']}개 삭제, "
+        f"정시 맞춤 {n['aligned']}행, 같은 시간 중복 {n['dup']}행 삭제"
+    )
 
 
 def move_converted(convert_root: str, targets: list[str], apply: bool) -> int:
@@ -122,10 +151,10 @@ def main() -> int:
         if not os.path.exists(p):
             print(f"  없음 {fn}")
             continue
-        new_lines, dropped, added = plan_file(p)
-        if dropped or added:
-            plans[fn] = (new_lines, dropped, added)
-            print(f"  {fn}: 09-01 이전 {dropped}행 삭제, 앞에 {added}행 추가")
+        new_lines, n = plan_file(p)
+        if any(n.values()):
+            plans[fn] = new_lines
+            print(f"  {fn}: {describe(n)}")
     if not plans:
         print("바꿀 파일 없음")
         return 0
@@ -135,7 +164,7 @@ def main() -> int:
 
     bak = os.path.join(os.path.dirname(raw_dir.rstrip("\\/")), f"{FOLDER}_bak-{datetime.now():%Y%m%d-%H%M%S}")
     os.makedirs(bak)
-    for fn, (new_lines, _d, _a) in plans.items():
+    for fn, new_lines in plans.items():
         p = os.path.join(raw_dir, fn)
         shutil.copy2(p, os.path.join(bak, fn))
         tmp = p + ".tmp"

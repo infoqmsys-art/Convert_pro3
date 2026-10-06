@@ -26,7 +26,7 @@ if ROOT not in sys.path:
 from core.file_processor import FileProcessor  # noqa: E402
 from core.fill_interval_processor import FillIntervalProcessor  # noqa: E402
 from core.sensor_processor import SensorProcessor  # noqa: E402
-from tools.gwan_prepare_raw import COMPANY, CUTOFF, FOLDER, SITE, plan_file  # noqa: E402
+from tools.gwan_prepare_raw import COMPANY, CUTOFF, FOLDER, SITE, describe, plan_file  # noqa: E402
 
 PORTAL_CONFIG = r"C:\projects\QMWebportal\data\convert_pro_remote\config.json"
 
@@ -91,11 +91,11 @@ def main() -> int:
 
     for fn in targets:
         p = os.path.join(raw_dir, fn)
-        new_lines, dropped, added = plan_file(p, CUTOFF)
-        if dropped or added:
+        new_lines, n = plan_file(p, CUTOFF)
+        if any(n.values()):
             with open(p, "w", encoding="utf-8", newline="\n") as f:
                 f.write("\n".join(new_lines) + "\n")
-            print(f"원본 정리 {fn}: 09-01 이전 {dropped}행 삭제, 앞에 {added}행 추가")
+            print(f"원본 정리 {fn}: {describe(n)}")
 
     results = {}
     for fn in targets:
