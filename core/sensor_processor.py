@@ -27,6 +27,7 @@ SensorProcessor (Convert Pro 3) - Column-based Engine
   CHANG_SM   시간대별 분포
   CHANG_SM2  0-based 8번 행·채널 열 셀 × base(배율) → 열 전체 동일값
   EL_TAEAM / EL_STATION / EL_TUNNEL / EL_NEW  base + 노이즈
+  EL_GWAN    base + 시각·파일 해시 기반 변동 (재변환 동일값, 센서마다 다름)
   CR / CR_TAEAM        BASE에 미세 노이즈만 살짝 쌓인 것처럼(균열계 가라)
   FM                   유량 누적 (carry 이어감)
   RA                   침하 누적
@@ -93,6 +94,7 @@ MODE_META = {
     "EL_TAEAM":   {"use_base": True,  "use_scale": True,  "ref": False, "desc": "EL_TAEAM 가라 (base + 정규분포)"},
     "EL_LOW":     {"use_base": True,  "use_scale": True,  "ref": False, "desc": "저노이즈 경사 가라 (scale=노이즈 배율, 기본 1=과거 고정 진폭과 동일)"},
     "EL_NEW":     {"use_base": True,  "use_scale": True,  "ref": False, "desc": "EL_NEW: 매행 뾰족노이즈(0.00005~0.0003) + ±0.0001 drift≤0.0015"},
+    "EL_GWAN":    {"use_base": True,  "use_scale": True,  "ref": False, "desc": "EL_GWAN: 인접건물 경사 가라. 원값 무시, 센서별 성향 다른 저주파 변동+일주기+미세노이즈, 재변환해도 같은 값"},
     "EL_STATION": {"use_base": True,  "use_scale": False, "ref": False, "desc": "정거장 경사 가라 (base + noise + drift)"},
     "EL_TUNNEL":  {"use_base": True,  "use_scale": False, "ref": False, "desc": "터널 경사 가라 (EL_STATION과 동일)"},
     "CR":         {"use_base": True,  "use_scale": False, "ref": False, "desc": "균열계 가라 (BASE 주변 미세 노이즈가 살짝 누적)"},
@@ -358,6 +360,8 @@ class SensorProcessor:
             # FM 등 변환본 마지막 값 이어가기용 (file_processor에서 설정)
             if "__last_converted_row__" in file_cfg:
                 cfg["__last_converted_row__"] = file_cfg["__last_converted_row__"]
+            cfg["__file_key__"] = str(file_cfg.get("__file_key__") or "")
+            cfg["__logger_number__"] = str(file_cfg.get("__logger_number__") or "")
 
             # base
             if meta["use_base"]:
@@ -1668,6 +1672,144 @@ class SensorProcessor:
             drift[i] = d
 
         delta = np.clip(noise + drift, -HARD_CAP, HARD_CAP)
+        return pd.Series(base + delta, index=df.index, dtype=float)
+
+    # EL_GWAN 시간축 원점. 이 시각의 저주파 변동이 0이 되도록 맞춘다.
+    _GWAN_EPOCH = pd.Timestamp("2026-09-01 00:00:00")
+
+    @staticmethod
+    def _gwan_mix(x: np.ndarray) -> np.ndarray:
+        """splitmix64 finalizer (uint64 배열, wrap 연산)."""
+        with np.errstate(over="ignore"):
+            x = x + np.uint64(0x9E3779B97F4A7C15)
+            x = (x ^ (x >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
+            x = (x ^ (x >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
+            return x ^ (x >> np.uint64(31))
+
+    @classmethod
+    def _gwan_uniform(cls, seed: int, salt: int, keys: np.ndarray) -> np.ndarray:
+        """(seed, salt, 정수 키) → [0, 1) 균등값. 같은 입력이면 항상 같은 값."""
+        k = np.asarray(keys, dtype=np.int64).view(np.uint64)
+        with np.errstate(over="ignore"):
+            s = cls._gwan_mix(np.array([seed ^ (salt * 0xD1B54A32D192ED03 & 0xFFFFFFFFFFFFFFFF)],
+                                       dtype=np.uint64))[0]
+            h = cls._gwan_mix(k ^ s)
+        return (h >> np.uint64(11)).astype(np.float64) * (1.0 / 9007199254740992.0)
+
+    @classmethod
+    def _gwan_value_noise(cls, seed: int, salt: int, t_h: np.ndarray, spacing_h: float) -> np.ndarray:
+        """spacing_h 간격 매듭에 [-1,1] 해시값을 두고 smoothstep 보간 (비주기 저주파)."""
+        x = t_h / spacing_h
+        k0 = np.floor(x)
+        f = x - k0
+        w = f * f * (3.0 - 2.0 * f)
+        k0i = k0.astype(np.int64)
+        v0 = cls._gwan_uniform(seed, salt, k0i) * 2.0 - 1.0
+        v1 = cls._gwan_uniform(seed, salt, k0i + 1) * 2.0 - 1.0
+        return v0 + (v1 - v0) * w
+
+    @staticmethod
+    def _gwan_seed(cfg: dict, base: float) -> int:
+        import hashlib
+
+        ident = (cfg.get("__file_key__") or "").strip() or (
+            f"logger:{cfg.get('__logger_number__') or ''}|base:{base:.6f}"
+        )
+        key = f"EL_GWAN|{ident}|{cfg.get('slot') or cfg.get('col_idx')}"
+        return int.from_bytes(hashlib.sha256(key.encode("utf-8")).digest()[:8], "little")
+
+    def generate_EL_GWAN(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
+        """
+        EL_GWAN: 인접건물 경사계(°) 가라. 원값은 읽지 않는다.
+
+        출력 = base + Δ(t), Δ 는 시각과 센서(파일·슬롯)만으로 정해진다.
+        - 재변환·증분 변환·배치 분할과 무관하게 같은 시각은 같은 값.
+        - 센서마다 진폭·주기·일주기 위상·노이즈 크기·상한이 각각 다름
+          → 120개에 같은 설정을 넣어도 파형·최대값이 겹치지 않음.
+
+        Δ 구성 (scale=1 기준, 단위 °):
+        - 저주파 4단(매듭 간격 1.5~2.5일 / 5~11일 / 3~6주 / 3~6개월) 비주기 변동
+        - 일주기: 진폭 0.00002~0.0001, 최고 시각 12~17시, 날마다 진폭 0.3~1.2배
+        - 샘플 노이즈: σ 0.000045~0.000095 + 드물게 ±1~2틱(0.0001)
+        - 센서별 상한 0.0024~0.0040 으로 tanh 완만 제한
+        L=1000mm 기준 0.004° ≈ 0.07mm 로 관리기준 1차 ±0.5mm 보다 한참 작다.
+        scale: 모든 진폭 배율(비우면 1, 0 이면 base 고정).
+        """
+        base = self._resolve_base(df, cfg)
+        if isinstance(base, pd.Series):
+            base = float(pd.to_numeric(base.iloc[0], errors="coerce"))
+        else:
+            base = float(base)
+        if not np.isfinite(base):
+            base = 0.0
+
+        ns = self._resolve_scale(cfg, default=1.0)
+        try:
+            ns = float(ns) if not isinstance(ns, str) else 1.0
+        except Exception:
+            ns = 1.0
+        if not np.isfinite(ns) or ns < 0.0:
+            ns = 1.0
+
+        n = len(df)
+        if n == 0 or ns == 0.0:
+            return pd.Series(np.full(n, base), index=df.index, dtype=float)
+
+        try:
+            ts = pd.to_datetime(df.iloc[:, 0], errors="coerce", format="mixed")
+        except TypeError:
+            ts = pd.to_datetime(df.iloc[:, 0], errors="coerce")
+        try:
+            if getattr(ts.dt, "tz", None) is not None:
+                ts = ts.dt.tz_localize(None)
+        except Exception:
+            pass
+        ts = ts.ffill().bfill()
+        if ts.isna().all():
+            t_h = np.arange(n, dtype=float)
+        else:
+            t_h = ((ts - self._GWAN_EPOCH) / pd.Timedelta(hours=1)).to_numpy(dtype=float)
+
+        seed = self._gwan_seed(cfg, base)
+        prof = np.random.default_rng(seed)
+
+        octaves = (
+            (prof.uniform(36.0, 60.0), prof.uniform(0.00002, 0.00008)),
+            (prof.uniform(120.0, 260.0), prof.uniform(0.00005, 0.00025)),
+            (prof.uniform(500.0, 1000.0), prof.uniform(0.00010, 0.00070)),
+            (prof.uniform(2200.0, 4400.0), prof.uniform(0.0, 0.00060)),
+        )
+        day_amp = prof.uniform(0.00002, 0.00010)
+        day_peak_h = prof.uniform(12.0, 17.0)
+        sigma = prof.uniform(0.000045, 0.000095)
+        bump_p = prof.uniform(0.003, 0.012)
+        cap = prof.uniform(0.0024, 0.0040)
+
+        t0 = np.zeros(1, dtype=float)
+        slow = np.zeros(n, dtype=float)
+        for i, (spacing, amp) in enumerate(octaves):
+            salt = 101 + i
+            slow += amp * (
+                self._gwan_value_noise(seed, salt, t_h, spacing)
+                - self._gwan_value_noise(seed, salt, t0, spacing)[0]
+            )
+
+        day_fac = 0.75 + 0.45 * self._gwan_value_noise(seed, 201, t_h, 24.0)
+        hour_of_day = np.mod(t_h, 24.0)
+        daily = day_amp * day_fac * np.cos(2.0 * np.pi * (hour_of_day - day_peak_h) / 24.0)
+
+        minute_key = np.round(t_h * 60.0).astype(np.int64)
+        u1 = self._gwan_uniform(seed, 301, minute_key)
+        u2 = self._gwan_uniform(seed, 302, minute_key)
+        u3 = self._gwan_uniform(seed, 303, minute_key)
+        noise = sigma * (u1 + u2 + u3 - 1.5) / 0.5
+        ub = self._gwan_uniform(seed, 304, minute_key)
+        us = self._gwan_uniform(seed, 305, minute_key)
+        bump = np.where(ub < bump_p, np.where(us < 0.5, -1.0, 1.0) * np.where(us % 0.5 < 0.35, 0.0001, 0.0002), 0.0)
+
+        delta = (slow + daily + noise + bump) * ns
+        lim = cap * ns
+        delta = lim * np.tanh(delta / lim)
         return pd.Series(base + delta, index=df.index, dtype=float)
 
     def generate_EL_STATION(self, df: pd.DataFrame, cfg: dict) -> pd.Series:

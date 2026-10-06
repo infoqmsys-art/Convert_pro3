@@ -538,6 +538,7 @@ class FileProcessor:
         
         if last_row is not None and last_row:  # None도 아니고 빈 딕셔너리도 아님
             file_cfg["__last_converted_row__"] = last_row
+        file_cfg["__file_key__"] = f"{company}/{site}/{folder}/{filename}"
         
         df = self.sensor.process(df, file_cfg)
         self.logger.log("센서 처리 완료", level="DEBUG")

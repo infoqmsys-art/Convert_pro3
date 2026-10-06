@@ -358,8 +358,8 @@ class ChannelSettingsUI:
         return str(raw or "").strip()
 
     def _fill_set_base_if_empty(self, key, mode, base_var):
-        """SET이고 base가 비었으면 초기치를 한 번 넣는다. 있는 값은 덮지 않음."""
-        if (mode or "").strip().upper() != "SET":
+        """SET·EL_GWAN이고 base가 비었으면 초기치를 한 번 넣는다. 있는 값은 덮지 않음."""
+        if (mode or "").strip().upper() not in ("SET", "EL_GWAN"):
             return
         if (base_var.get() or "").strip():
             return
@@ -1167,6 +1167,7 @@ class ChannelSettingsUI:
                     ("TS",        "TS 센서 가라값 (확률 분포 변동)\n- 70%: ±0.00005 이내\n- 20%: ±0.0002\n- 8% : ±0.0004\n- 2% : ±0.0005~0.0006\nbase = 중심값"),
                     ("EL_LOW",    "저노이즈 경사 가라\n- 98.5%: ±0.0003\n- 1.5% : ±0.001 스파이크\n+ 아주 느린 누적 drift\nbase = 중심값, scale 미사용"),
                     ("EL_NEW",    "경사 가라(매행 미세 뾰족 + 0.0001 drift)\n- 매 행 항상 노이즈 (평탄 없음): 이중곱 → |Δ|≈0.00005~0.0003\n- 드물게 ±0.0001씩 drift (장기≤0.0015)\n- 절대±0.004, scale 비우거나 1, 소수점 4 권장\nbase=중심값"),
+                    ("EL_GWAN",   "인접건물 경사 가라 (관수구 기본)\n- 원값 무시 → 원본이 튀어도 반영 안 됨\n- 미세노이즈 ±0.0001~0.0002 + 며칠~몇 달 단위 완만한 변동 + 일주기\n- 센서(파일·X/Y)마다 진폭·주기·상한이 달라 120개 넣어도 값·최대값이 겹치지 않음\n- 같은 시각은 재변환해도 같은 값\n- 변동 상한 약 0.0024~0.004° (L=1000mm 기준 0.07mm 이하)\nbase=초기치, scale=진폭 배율(비우면 1), 소수점 4"),
                     ("EL_TAEAM",  "TAEAM 경사계 가라 (정규분포)\n결과 = base + 정규분포(0, scale)\nbase = 중심값, scale = 표준편차 (기본 0.001)"),
                     ("EL_STATION","정거장 경사계 가라\n- 60%: ±0.0001 미세 노이즈\n- 30%: 0\n- 10%: ±0.0001~0.0003 스파이크\n+ 드문 누적 drift\nbase = 중심값"),
                     ("EL_TUNNEL", "터널 경사계 가라 (EL_STATION 동일 동작)"),
