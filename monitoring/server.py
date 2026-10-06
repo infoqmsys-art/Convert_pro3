@@ -76,8 +76,14 @@ else:
     _TEMPLATE_FOLDER = Path(__file__).parent / "templates"
     _STATIC_FOLDER = Path(__file__).parent / "static"
 
-CONFIG_PATH = _APP_ROOT / "config.json"
-MGMT_PATH   = _APP_ROOT / "management.json"
+if str(_APP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_APP_ROOT))
+from core.config_guard import replace_config_file
+from core.config_path import resolve_config_path
+
+_config_resolved, _config_shared = resolve_config_path(str(_APP_ROOT))
+CONFIG_PATH = Path(_config_resolved)
+MGMT_PATH   = (CONFIG_PATH.parent / "management.json") if _config_shared else (_APP_ROOT / "management.json")
 AUTH_PATH   = _APP_ROOT / "web_auth.json"
 QM_REMOTE_PATH = _APP_ROOT / "qm_remote.json"
 QM_LOCAL_DB_PATH = _APP_ROOT / "qm_remote_state.sqlite3"
@@ -314,43 +320,29 @@ def _load_config() -> dict:
 
 
 def _save_config(cfg: dict):
-    """원자적 저장: 락 획득 → 임시 파일 기록 → os.replace() 교체.
+    """락 안에서 config_guard 검사 후 교체.
 
-    - 락(_CONFIG_LOCK)으로 동시 저장 직렬화
-    - temp→rename 방식으로 부분 쓰기 노출 방지
-    - ConfigManager.save_lock 과는 별개이나, 원자 쓰기 덕분에 파일 깨짐 없음
+    _load_config 가 읽기 실패로 {} 를 돌려준 경우에도
+    업체 전멸 검사에서 막혀 서버 파일을 덮지 않는다.
     """
     with _CONFIG_LOCK:
-        tmp = Path(str(CONFIG_PATH) + ".tmp")
-        try:
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, ensure_ascii=False, indent=4)
-            os.replace(tmp, CONFIG_PATH)
-        except Exception:
-            if tmp.exists():
-                tmp.unlink(missing_ok=True)
-            raise
+        replace_config_file(str(CONFIG_PATH), cfg, allow_create=not _config_shared)
 
 
 @contextmanager
 def _edit_config():
-    """config.json read-modify-write 직렬화 컨텍스트 매니저."""
+    """config.json read-modify-write 직렬화 컨텍스트 매니저.
+
+    읽기에 실패하면 저장하지 않는다. 공유 경로가 잠깐 끊겼을 때
+    빈 객체로 서버 파일을 덮어쓰지 않기 위해서다.
+    """
     with _CONFIG_LOCK:
-        cfg = _load_config()
-        try:
-            yield cfg
-        except Exception:
-            raise
-        else:
-            tmp = Path(str(CONFIG_PATH) + ".tmp")
-            try:
-                with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(cfg, f, ensure_ascii=False, indent=4)
-                os.replace(tmp, CONFIG_PATH)
-            except Exception:
-                if tmp.exists():
-                    tmp.unlink(missing_ok=True)
-                raise
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            cfg = json.load(f)
+        if not isinstance(cfg, dict):
+            raise ValueError("config.json 최상위는 객체여야 합니다.")
+        yield cfg
+        replace_config_file(str(CONFIG_PATH), cfg, allow_create=not _config_shared)
 
 
 # ─────────────────────────────────────────

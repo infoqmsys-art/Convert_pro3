@@ -47,6 +47,13 @@ import json
 import os
 import threading
 
+from core.config_guard import (
+    ConfigWriteRefused,
+    company_keys,
+    file_mtime_ns,
+    replace_config_file,
+)
+
 
 DEFAULT_STRUCTURE = {
     "__version__": 2  # 버전 2: Site 레벨 추가
@@ -75,9 +82,12 @@ class ConfigManager:
     }
     """
 
-    def __init__(self, path="config.json", logger=None):
+    def __init__(self, path="config.json", logger=None, *, persist_on_load=True):
         self.path = path
         self.logger = logger
+        self.persist_on_load = persist_on_load
+        self._load_failed = False
+        self._disk_mtime_ns = None
         self.data = {}
         self.save_lock = threading.Lock()  # Thread-safe 저장을 위한 락
 
@@ -90,7 +100,9 @@ class ConfigManager:
         self.load()
         self._auto_correct_structure()
         self._migrate_unregistered_files()  # 기존 config.json의 미등록 파일을 별도 파일로 마이그레이션
-        self.save()
+        # 공유 경로는 열기만으로 서버 파일을 다시 쓰지 않는다.
+        if self.persist_on_load:
+            self.save()
 
     # -----------------------------------------------------
     # Logging helper
@@ -107,6 +119,8 @@ class ConfigManager:
     def load(self, quiet=False):
         """config.json 로딩. quiet=True면 웹 등 외부 반영용 재로드(로그 생략)."""
         if not os.path.exists(self.path):
+            if not self.persist_on_load:
+                raise FileNotFoundError(f"config.json 없음: {self.path}")
             if not quiet:
                 self._log("config.json 없음 → 새 파일 생성.")
             self.data = DEFAULT_STRUCTURE.copy()
@@ -114,8 +128,15 @@ class ConfigManager:
             return
 
         try:
+            # 읽기 전에 시각을 잡는다. 읽는 도중 바뀌면 저장 때 어긋나서 거부된다.
+            mtime_before = file_mtime_ns(self.path)
             with open(self.path, "r", encoding="utf-8") as f:
-                self.data = json.load(f)
+                loaded = json.load(f)
+            if not isinstance(loaded, dict):
+                raise ValueError("config.json 최상위가 객체가 아닙니다.")
+            self.data = loaded
+            self._load_failed = False
+            self._disk_mtime_ns = mtime_before
             if not quiet:
                 self._log("config.json 로딩 완료.")
             
@@ -135,29 +156,42 @@ class ConfigManager:
                 else:
                     self._log("[ConfigManager] 마이그레이션 검증 실패 - 백업에서 복원 권장", level="ERROR")
         except Exception as e:
-            self._log(f"config 로딩 실패: {e}", level="ERROR")
-            self.data = DEFAULT_STRUCTURE.copy()
+            if company_keys(self.data):
+                # 공유 경로가 잠깐 끊긴 재로드 — 쓰던 설정을 유지한다.
+                self._log(f"config 다시 읽기 실패. 기존 설정을 유지합니다: {e}", level="WARN")
+                return
+            self._load_failed = True
+            self.data = {}
+            self._log(f"config 로딩 실패. 이 상태로는 저장하지 않습니다: {e}", level="ERROR")
 
-    def save(self):
-        """config.json 원자적 저장 (Thread-safe).
+    def save(self) -> bool:
+        """config.json 원자적 저장 (Thread-safe). 저장했으면 True.
 
-        임시 파일에 먼저 기록 후 os.replace()로 교체하여
-        Flask 웹 서버의 동시 쓰기가 발생해도 파일이 깨지지 않는다.
+        거부하는 경우:
+          · 읽기에 실패한 상태
+          · 읽은 뒤 다른 곳에서 파일이 바뀐 경우
+          · 업체가 전부 사라지거나 내용이 절반 미만으로 줄어드는 경우
         """
         with self.save_lock:
-            tmp = self.path + ".tmp"
             try:
-                with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(self.data, f, indent=4, ensure_ascii=False)
-                os.replace(tmp, self.path)
+                if self._load_failed:
+                    raise ConfigWriteRefused(
+                        "config.json 을 읽지 못한 상태라 저장하지 않습니다."
+                    )
+                self._disk_mtime_ns = replace_config_file(
+                    self.path,
+                    self.data,
+                    allow_create=self.persist_on_load,
+                    expected_mtime_ns=self._disk_mtime_ns,
+                )
                 self._log("config 저장 완료.")
+                return True
+            except ConfigWriteRefused as e:
+                self._log(f"config 저장 거부: {e}", level="ERROR")
+                return False
             except Exception as e:
                 self._log(f"config 저장 실패: {e}", level="ERROR")
-                try:
-                    if os.path.exists(tmp):
-                        os.remove(tmp)
-                except Exception:
-                    pass
+                return False
 
     # -----------------------------------------------------
     # 자동 변환 스케줄 (__scheduler__ — 회사/현장과 별도 최상위 키)

@@ -38,6 +38,7 @@ ENABLE_MEMORY_TRACKING = False  # 프로덕션 24시간 운용 시 비활성화 
 ENABLE_MONITORING_WEB = False  # False: Convert Pro3에서 Flask 웹 미기동 (직접 실행은 python monitoring/server.py)
 
 from core.config_manager import ConfigManager
+from core.config_path import resolve_config_path
 from core.management_manager import ManagementManager
 from core.tree_manager import TreeManager
 from core.file_processor import FileProcessor
@@ -189,8 +190,20 @@ class ConvertPro3App:
         # =========================
         # Config / Tree
         # =========================
-        config_path = os.path.join(self.base_dir, "config.json")
-        self.config = ConfigManager(config_path, self.logger)
+        config_path, config_shared = resolve_config_path(self.base_dir)
+        if config_shared and not os.path.isfile(config_path):
+            self.logger.log(
+                f"공유 config.json 을 열 수 없습니다: {config_path}",
+                level="ERROR",
+            )
+            raise SystemExit(1)
+        if config_shared:
+            self.logger.log(f"공유 config.json 사용: {config_path}")
+        self.config = ConfigManager(
+            config_path,
+            self.logger,
+            persist_on_load=not config_shared,
+        )
         self.tree = TreeManager(self.config, self.logger)
 
         # =========================
