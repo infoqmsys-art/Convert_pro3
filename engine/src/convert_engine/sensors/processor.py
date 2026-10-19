@@ -29,7 +29,7 @@ SensorProcessor (Convert Pro 3) - Column-based Engine
   EL_TAEAM / EL_STATION / EL_TUNNEL  base + 노이즈
   CR / CR_TAEAM        BASE에 미세 노이즈만 살짝 쌓인 것처럼(균열계 가라)
   FM                   유량 누적 (carry 이어감)
-  RA                   침하 누적
+  RA                   초기치 주변 미세 떨림 (1차 관리기준 근처는 초기치 쪽으로)
 
 =====================================================================
 누락보충(fill) 정책
@@ -96,7 +96,7 @@ MODE_META = {
     "CR":         {"use_base": True,  "use_scale": False, "ref": False, "desc": "균열계 가라 (BASE 주변 미세 노이즈가 살짝 누적)"},
     "CR_TAEAM":   {"use_base": True,  "use_scale": False, "ref": False, "desc": "CR_TAEAM 가라 (저확률 미세 노이즈 누적)"},
     "FM":         {"use_base": True,  "use_scale": False, "ref": False, "desc": "유량계 가라 (carry 이어감, 월~토 06~18시)"},
-    "RA":         {"use_base": True,  "use_scale": True,  "ref": False, "desc": "레일변위 가라 (미세 떨림 위주, 하락·침하 경향 최소)"},
+    "RA":         {"use_base": True,  "use_scale": True,  "ref": False, "desc": "레일변위 가라 (초기치 주변, 1차 관리기준 근처는 당김)"},
     "L-QM":       {"use_base": True,  "use_scale": True,  "ref": False, "desc": "하중계 가라 (base 기준 점진적 감소 + 소수점 2자리 랜덤 노이즈)"},
     "L-KoreaHY":  {"use_base": True,  "use_scale": True,  "ref": False, "desc": "하중계 가라 KoreaHY형 (base 주변 랜덤 진동, 추세 없음)"},
     "ST":         {"use_base": True,  "use_scale": True,  "ref": False, "desc": "변형률계 가라 (base 주변 떨림, 추세 없음)"},
@@ -347,6 +347,10 @@ class SensorProcessor:
                 rdd = self._parse_number_or_none(raw.get("ra_down_prob", None))
                 if rdd is not None:
                     cfg["ra_down_prob"] = float(rdd)
+                for key in ("ra_up_prob", "ra_spike_prob", "ra_carry_keep", "ra_return_rows", "ra_level1_deg"):
+                    val = self._parse_number_or_none(raw.get(key, None))
+                    if val is not None:
+                        cfg[key] = float(val)
 
             if mode == "DO_CR":
                 cfg["cr_step"] = self._parse_number_or_none(raw.get("cr_step"))
@@ -506,20 +510,22 @@ class SensorProcessor:
     def generate_RA(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
         """
         RA (레일변위계·각도):
-        - 완전 가라값: 원본 센서값을 사용하지 않는다.
-        - 시작값: 변환본 마지막 값(carry) 우선 → 없으면 base → 없으면 0.0
-        - 행동 모델(기본): 명시적 하락 스텝은 행당 ~0.002% — 사실상 미세 떨림(hold)만 보이게
-        - 노이즈는 초기치 주변에서 매우 좁게 진동 (행마다 독립, 누적 안 됨)
-        - 선형 침하(ra_settle) 기본 0 — 장기 하향 드리프트 없음(필요 시 음수로 지정)
+        - 완전 가라값. 원본 센서값은 쓰지 않는다.
+        - 중심은 설정 base(초기치). 직전 변환값을 다음 중심으로 올리지 않는다.
+        - 직전 값이 있으면 그 거리의 일부만 남기고 몇 행 안에 초기치로 돌아온다.
+        - 초기치에서 1차 관리기준(기본 4mm, 길이 1000mm ≈ 0.229°) 근처로 나간 편차는
+          그 기준 아래로 접는다. 초기치 근처의 미세 떨림은 그대로 둔다.
 
         config 파라미터 (CH 설정에서 지정 가능):
-          scale       : 행별 잡음 진폭 한계 (기본 0.015 상당)
-          ra_settle   : 월간 선형 침하량(음수, 기본 0.0=없음). 음수면 월간 그만큼 점진 하향
-          ra_rows_per_month: 그 월간 침하를 나눌 데이터 행 수(기본 7200).
-              샘플이 촘촘할수록 크게(예: 2분 간격×30일≈21600). 예전 기본 720은 행 많을 때 과도 누적
-          ra_down_prob: 명시적 하락 스텝 비율 (기본 2e-5 ≈ 행당 0.002%, 0이면 하락 스텝 없음)
-          ra_up_prob  : 명시적 상승 스텝 비율 (기본 0.001 = 0.1%)
-          ra_spike_prob: 스파이크 발생 확률 (기본 0.003)
+          scale       : 행별 잡음 진폭 한계 (기본 0.015)
+          ra_settle   : 월간 선형 침하량(음수, 기본 0.0=없음)
+          ra_rows_per_month: 월간 침하를 나눌 행 수(기본 7200)
+          ra_down_prob: 명시적 하락 스텝 비율 (기본 2e-5, 0이면 없음)
+          ra_up_prob  : 명시적 상승 스텝 비율 (기본 0.001)
+          ra_spike_prob: 스파이크 확률 (기본 0.003)
+          ra_carry_keep: 직전값 중 남기는 비율 (기본 0.35). 0이면 바로 초기치
+          ra_return_rows: 남은 직전 편차가 줄어드는 행 수 (기본 8)
+          ra_level1_deg: 1차 관리기준에 해당하는 각도 (기본 4mm·L=1000)
         """
         col_idx = cfg["col_idx"]
         n = len(df)
@@ -606,19 +612,38 @@ class SensorProcessor:
         spike_mask[0] = False
         if spike_mask.any():
             nsp = int(spike_mask.sum())
-            # 스파이크도 음·양 대칭이면 체감상 자주 "내려감" — 위쪽이 다소 많도록 편향
-            spike_dir = np.where(rng.random(nsp) < 0.05, -1.0, 1.0)
+            spike_dir = np.where(rng.random(nsp) < 0.5, -1.0, 1.0)
             oscillation[spike_mask] = spike_dir * rng.uniform(scale_v * 0.8, spike_amp, size=nsp)
 
-        # ── 최종 출력: center (선형 drift) + 독립 진동
+        # 중심은 초기치. 직전 변환값은 일부만 남기고 몇 행 안에 초기치로 돌아온다.
         hk = header_key_for_col(col_idx)
         try:
             base_val = float(cfg.get("base") or 0.0)
         except (TypeError, ValueError):
             base_val = 0.0
-        start = resolve_start_scalar(read_carry_float(cfg, hk), base_val)
-        center = start + settle_per_row * t_arr
-        out = center + oscillation
+        carry = read_carry_float(cfg, hk)
+        keep = min(max(_ra_float("ra_carry_keep", 0.35), 0.0), 1.0)
+        tau = max(_ra_float("ra_return_rows", 8.0), 1.0)
+        if carry is None:
+            anchor = np.zeros(n, dtype=float)
+        else:
+            gap = (float(carry) - base_val) * keep
+            anchor = gap * np.exp(-t_arr / tau)
+
+        # 1차 관리기준(기본 4mm, L=1000mm) 근처로 나간 편차는 그 아래로 접는다.
+        level1 = max(_ra_float("ra_level1_deg", 4.0 * 180.0 / (1000.0 * np.pi)), 1e-4)
+        knee = level1 * 0.45
+        cap = level1 * 0.62
+        span = max(cap - knee, 1e-6)
+
+        center = base_val + settle_per_row * t_arr + anchor
+        raw = center + oscillation
+        dev = raw - base_val
+        mag = np.abs(dev)
+        excess = np.maximum(mag - knee, 0.0)
+        pulled = knee + span * (1.0 - np.exp(-excess / span))
+        mag = np.where(mag <= knee, mag, pulled)
+        out = base_val + np.sign(dev) * mag
         return pd.Series(out, index=df.index, dtype=float)
 
     def generate_SET(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
