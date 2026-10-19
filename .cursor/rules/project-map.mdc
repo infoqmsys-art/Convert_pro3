@@ -1,0 +1,19 @@
+---
+description: 원본데이터 변환(Convert_pro3·File_Converter) → 수집기 → 웹포털 전체 구성과 서버(메인3·메인5) 구분
+alwaysApply: true
+---
+
+# 프로젝트 구성 (원본 → 포털)
+
+| 프로젝트 | 경로 | 하는 일 | 서버 |
+|---|---|---|---|
+| Convert_pro3 | `C:\projects\Convert_pro3` | **아날로그 센서** 원본 정리·변환 → 변환본 CSV (`C:/DATA/Convertfile/...`) | 메인3 |
+| File_Converter | `C:\projects\File_Converter` | **485 센서** 원본 정리·변환 → 변환본 CSV (`C:\data\Convertcsv`) | 메인5 |
+| 수집기 | `C:\projects\QMWebportal\collector-v1` | 각 서버 PC에서 변환본 CSV를 읽어 포털 DB에 적재 | 메인3·메인5 각각 |
+| 웹포털 | `C:\projects\QMWebportal` | DB 값을 그대로 보여 줌(표·그래프·보고서) | 웹 서버 |
+
+흐름: 원본 → 변환(아날로그=Convert_pro3 / 485=File_Converter) → 수집기 → 포털 DB → 웹포털
+
+- 포털은 값을 다시 가공하지 않는다. 값·파형이 이상하면 먼저 그 센서가 아날로그인지 485인지 보고 해당 변환 프로그램을 본다.
+- 로거의 서버명(`logger_device.server_name` = 수집기 ini `[server] server_name`, `메인3`/`메인5`)으로 어느 쪽 변환 프로그램 데이터인지 구분한다.
+- 버전은 프로젝트마다 따로 관리한다. 포털·수집기 버전 규칙은 QMWebportal `version-bump.mdc`.
