@@ -405,7 +405,7 @@ class SensorProcessor:
                 rdd = self._parse_number_or_none(raw.get("ra_down_prob", None))
                 if rdd is not None:
                     cfg["ra_down_prob"] = float(rdd)
-                for key in ("ra_up_prob", "ra_spike_prob", "ra_carry_keep", "ra_return_rows", "ra_level1_deg"):
+                for key in ("ra_up_prob", "ra_spike_prob", "ra_return_hours"):
                     val = self._parse_number_or_none(raw.get(key, None))
                     if val is not None:
                         cfg[key] = float(val)
@@ -569,10 +569,9 @@ class SensorProcessor:
         """
         RA (레일변위계·각도):
         - 완전 가라값. 원본 센서값은 쓰지 않는다.
-        - 중심은 설정 base(초기치). 직전 변환값을 다음 중심으로 올리지 않는다.
-        - 직전 값이 있으면 그 거리의 일부만 남기고 몇 행 안에 초기치로 돌아온다.
-        - 초기치에서 1차 관리기준(기본 4mm, 길이 1000mm ≈ 0.229°) 근처로 나간 편차는
-          그 기준 아래로 접는다. 초기치 근처의 미세 떨림은 그대로 둔다.
+        - 중심은 설정 base(초기치).
+        - 직전 변환값이 초기치에서 벗어나 있으면 그 자리에서 이어 받고, 약 4일에 걸쳐 초기치로 돌아온다.
+        - 행마다 미세 떨림은 둔다. 그보다 큰 스파이크는 떨림의 절반 안으로 줄인다.
 
         config 파라미터 (CH 설정에서 지정 가능):
           scale       : 행별 잡음 진폭 한계 (기본 0.015)
@@ -581,9 +580,7 @@ class SensorProcessor:
           ra_down_prob: 명시적 하락 스텝 비율 (기본 2e-5, 0이면 없음)
           ra_up_prob  : 명시적 상승 스텝 비율 (기본 0.001)
           ra_spike_prob: 스파이크 확률 (기본 0.003)
-          ra_carry_keep: 직전값 중 남기는 비율 (기본 0.35). 0이면 바로 초기치
-          ra_return_rows: 남은 직전 편차가 줄어드는 행 수 (기본 8)
-          ra_level1_deg: 1차 관리기준에 해당하는 각도 (기본 4mm·L=1000)
+          ra_return_hours: 직전 편차가 1/e 로 줄어드는 시간 (기본 96)
         """
         col_idx = cfg["col_idx"]
         n = len(df)
@@ -655,53 +652,48 @@ class SensorProcessor:
         # hold: center 근방 미세 떨림
         if m_hold.any():
             oscillation[m_hold] = rng.normal(0.0, scale_v * 0.15, size=int(m_hold.sum()))
-        # up: center 위 영역 (scale_v의 10%~60%)
+        # up: 미세 떨림보다 조금 큰 정도만
         if m_up.any():
-            oscillation[m_up] = rng.uniform(scale_v * 0.1, scale_v * 0.6, size=int(m_up.sum()))
+            oscillation[m_up] = rng.uniform(scale_v * 0.05, scale_v * 0.25, size=int(m_up.sum()))
 
         oscillation = np.clip(oscillation, -scale_v, scale_v)
-        oscillation[0] = 0.0   # 첫 행은 시작값 그대로
 
-        # ── 드문 스파이크 (독립, 누적 없음)
-        spike_prob = float(cfg.get("ra_spike_prob", 0.003) or 0.003)
-        spike_prob = min(max(spike_prob, 0.0), 0.05)
-        spike_amp  = scale_v * 1.2
+        # 스파이크는 떨림(scale)의 절반을 넘지 않는다.
+        spike_prob = min(max(_ra_float("ra_spike_prob", 0.003), 0.0), 0.05)
         spike_mask = rng.random(n) < spike_prob
-        spike_mask[0] = False
         if spike_mask.any():
             nsp = int(spike_mask.sum())
             spike_dir = np.where(rng.random(nsp) < 0.5, -1.0, 1.0)
-            oscillation[spike_mask] = spike_dir * rng.uniform(scale_v * 0.8, spike_amp, size=nsp)
+            oscillation[spike_mask] = spike_dir * rng.uniform(scale_v * 0.2, scale_v * 0.45, size=nsp)
 
-        # 중심은 초기치. 직전 변환값은 일부만 남기고 몇 행 안에 초기치로 돌아온다.
+        # 직전 값이 초기치에서 벌어져 있으면, 그 자리를 잇고 시간(기본 96시간)에 걸쳐 돌아온다.
         hk = header_key_for_col(col_idx)
         try:
             base_val = float(cfg.get("base") or 0.0)
         except (TypeError, ValueError):
             base_val = 0.0
         carry = read_carry_float(cfg, hk)
-        keep = min(max(_ra_float("ra_carry_keep", 0.35), 0.0), 1.0)
-        tau = max(_ra_float("ra_return_rows", 8.0), 1.0)
+        tau_h = max(_ra_float("ra_return_hours", 96.0), 1.0)
         if carry is None:
             anchor = np.zeros(n, dtype=float)
         else:
-            gap = (float(carry) - base_val) * keep
-            anchor = gap * np.exp(-t_arr / tau)
-
-        # 1차 관리기준(기본 4mm, L=1000mm) 근처로 나간 편차는 그 아래로 접는다.
-        level1 = max(_ra_float("ra_level1_deg", 4.0 * 180.0 / (1000.0 * np.pi)), 1e-4)
-        knee = level1 * 0.45
-        cap = level1 * 0.62
-        span = max(cap - knee, 1e-6)
+            last = cfg.get("__last_converted_row__")
+            last_ts = None
+            if isinstance(last, dict):
+                last_ts = pd.to_datetime(last.get("timestamp"), errors="coerce")
+                if pd.isna(last_ts):
+                    last_ts = None
+            row_ts = pd.to_datetime(df.iloc[:, 0], errors="coerce") if df.shape[1] else pd.Series(dtype="datetime64[ns]")
+            if last_ts is not None and len(row_ts):
+                hours = (row_ts - last_ts).dt.total_seconds().to_numpy(dtype=float) / 3600.0
+            else:
+                hours = np.arange(1, n + 1, dtype=float)
+            hours = np.where(np.isfinite(hours), hours, np.arange(1, n + 1, dtype=float))
+            hours = np.maximum(hours, 0.0)
+            anchor = (float(carry) - base_val) * np.exp(-hours / tau_h)
 
         center = base_val + settle_per_row * t_arr + anchor
-        raw = center + oscillation
-        dev = raw - base_val
-        mag = np.abs(dev)
-        excess = np.maximum(mag - knee, 0.0)
-        pulled = knee + span * (1.0 - np.exp(-excess / span))
-        mag = np.where(mag <= knee, mag, pulled)
-        out = base_val + np.sign(dev) * mag
+        out = center + oscillation
         return pd.Series(out, index=df.index, dtype=float)
 
     def generate_SET(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
