@@ -645,25 +645,25 @@ class SensorProcessor:
         m_hold = (mode_r >= down_prob) & (mode_r < down_prob + hold_prob)
         m_up   = ~(m_down | m_hold)
 
-        # down: center 아래 — 드문 경우에만, 진폭도 상대적으로 작게
+        # down: 아주 드문 아래쪽. 흔들림보다 크지 않게.
         if m_down.any():
             k = int(m_down.sum())
-            oscillation[m_down] = -rng.uniform(scale_v * 0.08, scale_v * 0.45, size=k)
-        # hold / up: 초기치에서 더 벌어지는 방향 없이, scale 안의 작은 흔들림
+            oscillation[m_down] = -rng.uniform(scale_v * 0.04, scale_v * 0.12, size=k)
+        # 평소 흔들림은 scale의 약 1/10. 그래프에서 굵게 보이지 않게.
         if m_hold.any():
-            oscillation[m_hold] = rng.normal(0.0, scale_v * 0.4, size=int(m_hold.sum()))
+            oscillation[m_hold] = rng.normal(0.0, scale_v * 0.1, size=int(m_hold.sum()))
         if m_up.any():
-            oscillation[m_up] = rng.normal(0.0, scale_v * 0.4, size=int(m_up.sum()))
+            oscillation[m_up] = rng.normal(0.0, scale_v * 0.1, size=int(m_up.sum()))
 
-        oscillation = np.clip(oscillation, -scale_v, scale_v)
+        oscillation = np.clip(oscillation, -scale_v * 0.25, scale_v * 0.25)
 
-        # 스파이크는 떨림(scale)의 절반을 넘지 않는다.
+        # 스파이크도 그 작은 흔들림 안에 둔다.
         spike_prob = min(max(_ra_float("ra_spike_prob", 0.003), 0.0), 0.05)
         spike_mask = rng.random(n) < spike_prob
         if spike_mask.any():
             nsp = int(spike_mask.sum())
             spike_dir = np.where(rng.random(nsp) < 0.5, -1.0, 1.0)
-            oscillation[spike_mask] = spike_dir * rng.uniform(scale_v * 0.2, scale_v * 0.45, size=nsp)
+            oscillation[spike_mask] = spike_dir * rng.uniform(scale_v * 0.08, scale_v * 0.18, size=nsp)
 
         # 직전 값이 초기치에서 벌어져 있으면 그 자리를 잇는다. 기본 180일에 걸쳐 돌아온다.
         hk = header_key_for_col(col_idx)
