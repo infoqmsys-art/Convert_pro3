@@ -512,8 +512,8 @@ class SensorProcessor:
         RA (레일변위계·각도):
         - 완전 가라값. 원본 센서값은 쓰지 않는다.
         - 중심은 설정 base(초기치).
-        - 직전 변환값이 초기치에서 벗어나 있으면 그 자리에서 이어 받고, 약 4일에 걸쳐 초기치로 돌아온다.
-        - 행마다 미세 떨림은 둔다. 그보다 큰 스파이크는 떨림의 절반 안으로 줄인다.
+        - 직전 변환값이 초기치에서 벗어나 있으면 그 자리에서 잇는다. 위로 밀지 않고, 약 반년에 걸쳐 초기치로 돌아온다.
+        - 그 사이 변화는 scale 안의 작은 흔들림이다. 스파이크도 그 폭을 넘지 않는다.
 
         config 파라미터 (CH 설정에서 지정 가능):
           scale       : 행별 잡음 진폭 한계 (기본 0.015)
@@ -522,7 +522,7 @@ class SensorProcessor:
           ra_down_prob: 명시적 하락 스텝 비율 (기본 2e-5, 0이면 없음)
           ra_up_prob  : 명시적 상승 스텝 비율 (기본 0.001)
           ra_spike_prob: 스파이크 확률 (기본 0.003)
-          ra_return_hours: 직전 편차가 1/e 로 줄어드는 시간 (기본 96)
+          ra_return_hours: 직전 편차가 1/e 로 줄어드는 시간 (기본 4320, 약 180일)
         """
         col_idx = cfg["col_idx"]
         n = len(df)
@@ -591,12 +591,11 @@ class SensorProcessor:
         if m_down.any():
             k = int(m_down.sum())
             oscillation[m_down] = -rng.uniform(scale_v * 0.08, scale_v * 0.45, size=k)
-        # hold: center 근방 미세 떨림
+        # hold / up: 초기치에서 더 벌어지는 방향 없이, scale 안의 작은 흔들림
         if m_hold.any():
-            oscillation[m_hold] = rng.normal(0.0, scale_v * 0.15, size=int(m_hold.sum()))
-        # up: 미세 떨림보다 조금 큰 정도만
+            oscillation[m_hold] = rng.normal(0.0, scale_v * 0.4, size=int(m_hold.sum()))
         if m_up.any():
-            oscillation[m_up] = rng.uniform(scale_v * 0.05, scale_v * 0.25, size=int(m_up.sum()))
+            oscillation[m_up] = rng.normal(0.0, scale_v * 0.4, size=int(m_up.sum()))
 
         oscillation = np.clip(oscillation, -scale_v, scale_v)
 
@@ -608,14 +607,14 @@ class SensorProcessor:
             spike_dir = np.where(rng.random(nsp) < 0.5, -1.0, 1.0)
             oscillation[spike_mask] = spike_dir * rng.uniform(scale_v * 0.2, scale_v * 0.45, size=nsp)
 
-        # 직전 값이 초기치에서 벌어져 있으면, 그 자리를 잇고 시간(기본 96시간)에 걸쳐 돌아온다.
+        # 직전 값이 초기치에서 벌어져 있으면 그 자리를 잇는다. 기본 180일에 걸쳐 돌아온다.
         hk = header_key_for_col(col_idx)
         try:
             base_val = float(cfg.get("base") or 0.0)
         except (TypeError, ValueError):
             base_val = 0.0
         carry = read_carry_float(cfg, hk)
-        tau_h = max(_ra_float("ra_return_hours", 96.0), 1.0)
+        tau_h = max(_ra_float("ra_return_hours", 4320.0), 1.0)
         if carry is None:
             anchor = np.zeros(n, dtype=float)
         else:

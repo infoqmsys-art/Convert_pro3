@@ -50,22 +50,33 @@ def test_stays_near_initial_without_carry() -> None:
 
 
 def test_drift_pulls_slowly() -> None:
-    """0.2562°(약 4.47mm)는 한 시간에 꺾이지 않고, 나흘이면 약 37%만 남는다."""
+    """기본은 반년에 걸쳐 돌아온다. 하루·2주에는 거의 그 자리에 있다."""
     carry = 0.2562
     cfg = _cfg(
         scale=0.0,
         __last_converted_row__={"timestamp": "2026-10-19 11:00:00", "AmountCH0": carry},
     )
-    out = SensorProcessor().generate_RA(_frame("2026-10-19 12:00:00", 192), cfg)
+    out = SensorProcessor().generate_RA(_frame("2026-10-19 12:00:00", 24 * 14), cfg)
     one_h = float(out.iloc[0])
     one_day = float(out.iloc[23])
-    four_days = float(out.iloc[95])
-    assert one_h > carry * 0.97
+    two_weeks = float(out.iloc[-1])
+    assert one_h > carry * 0.999
     assert one_h < carry
-    assert _mm(one_h) > 4.0
+    assert _mm(one_h) > 4.4
     assert one_day < one_h
-    assert abs(four_days - carry / math.e) < 0.01
-    assert abs(float(out.iloc[-1])) < abs(four_days)
+    assert two_weeks > carry * 0.90
+    assert two_weeks < one_day
+
+
+def test_return_follows_hours() -> None:
+    carry = 0.2562
+    cfg = _cfg(
+        scale=0.0,
+        ra_return_hours=96.0,
+        __last_converted_row__={"timestamp": "2026-10-19 11:00:00", "AmountCH0": carry},
+    )
+    out = SensorProcessor().generate_RA(_frame("2026-10-19 12:00:00", 96), cfg)
+    assert abs(float(out.iloc[95]) - carry / math.e) < 0.01
 
 
 def test_spikes_stay_inside_noise_band() -> None:
@@ -82,5 +93,6 @@ def test_spikes_stay_inside_noise_band() -> None:
 if __name__ == "__main__":
     test_stays_near_initial_without_carry()
     test_drift_pulls_slowly()
+    test_return_follows_hours()
     test_spikes_stay_inside_noise_band()
     print("ok")
