@@ -50,6 +50,17 @@ CHANNEL_PRESETS: dict[str, dict[str, Any]] = {
             "CH7": _slot("PASS"),
         },
     },
+    "정거장_경사10분": {
+        "desc": (
+            "내장 X·Y EL_ST10 (10분 정거장 경사, 누적 drift 없음), 소수점 4. "
+            "기존 base·initial 은 유지. 다른 채널은 건드리지 않음. "
+            "이미 변환본에 쌓인 드리프트 구간은 지우고 다시 변환해야 바뀐다."
+        ),
+        "slots": {
+            "degreeX": _slot("EL_ST10", label="내장ELX", decimal="4", scale="1"),
+            "degreeY": _slot("EL_ST10", label="내장ELY", decimal="4", scale="1"),
+        },
+    },
 }
 
 PRESET_NAMES = tuple(CHANNEL_PRESETS.keys())

@@ -27,6 +27,7 @@ SensorProcessor (Convert Pro 3) - Column-based Engine
   CHANG_SM   시간대별 분포
   CHANG_SM2  0-based 8번 행·채널 열 셀 × base(배율) → 열 전체 동일값
   EL_TAEAM / EL_STATION / EL_TUNNEL / EL_NEW  base + 노이즈
+  EL_ST10    정거장 10분 경사. EL_STATION 노이즈만, 누적 drift 없음
   EL_GWAN    base + 시각·파일 해시 기반 변동 (재변환 동일값, 센서마다 다름)
   CR / CR_TAEAM        BASE에 미세 노이즈만 살짝 쌓인 것처럼(균열계 가라)
   CR_GWAN    CR 비슷 + 한 시점 튐 조금 더 (시각·파일 해시, 재변환 동일값)
@@ -97,6 +98,7 @@ MODE_META = {
     "EL_NEW":     {"use_base": True,  "use_scale": True,  "ref": False, "desc": "EL_NEW: 매행 뾰족노이즈(0.00005~0.0003) + ±0.0001 drift≤0.0015"},
     "EL_GWAN":    {"use_base": True,  "use_scale": True,  "ref": False, "desc": "EL_GWAN: 인접건물 경사 가라. 원값 무시, 센서별 성향 다른 저주파 변동+일주기+미세노이즈, 재변환해도 같은 값"},
     "EL_STATION": {"use_base": True,  "use_scale": False, "ref": False, "desc": "정거장 경사 가라 (base + noise + drift)"},
+    "EL_ST10":    {"use_base": True,  "use_scale": True,  "ref": False, "desc": "정거장 경사 10분용. EL_STATION 노이즈만, 누적 drift 없음. 초기치 고정"},
     "EL_TUNNEL":  {"use_base": True,  "use_scale": False, "ref": False, "desc": "터널 경사 가라 (EL_STATION과 동일)"},
     "CR":         {"use_base": True,  "use_scale": False, "ref": False, "desc": "균열계 가라 (BASE 주변 미세 노이즈가 살짝 누적)"},
     "CR_TAEAM":   {"use_base": True,  "use_scale": False, "ref": False, "desc": "CR_TAEAM 가라 (저확률 미세 노이즈 누적)"},
@@ -315,7 +317,7 @@ class SensorProcessor:
 
         return df
 
-    TIME_ONLY_MODES = ("EL_GWAN", "CR_GWAN")
+    TIME_ONLY_MODES = ("EL_GWAN", "CR_GWAN", "EL_ST10")
 
     def regen_time_only(self, df: pd.DataFrame, file_cfg: dict) -> pd.DataFrame:
         """
@@ -1788,13 +1790,13 @@ class SensorProcessor:
         return base, ns, t_h
 
     @staticmethod
-    def _gwan_seed(cfg: dict, base: float) -> int:
+    def _gwan_seed(cfg: dict, base: float, kind: str = "EL_GWAN") -> int:
         import hashlib
 
         ident = (cfg.get("__file_key__") or "").strip() or (
             f"logger:{cfg.get('__logger_number__') or ''}|base:{base:.6f}"
         )
-        key = f"EL_GWAN|{ident}|{cfg.get('slot') or cfg.get('col_idx')}"
+        key = f"{kind}|{ident}|{cfg.get('slot') or cfg.get('col_idx')}"
         return int.from_bytes(hashlib.sha256(key.encode("utf-8")).digest()[:8], "little")
 
     def generate_EL_GWAN(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
@@ -1963,6 +1965,44 @@ class SensorProcessor:
 
         return base_num + noise + pd.Series(drift, index=df.index, dtype=float) + off
 
+    def generate_EL_ST10(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
+        """
+        EL_ST10: 정거장 경사계 10분 간격용. 원값은 읽지 않는다.
+
+        EL_STATION 은 행마다 0.1% 확률로 ±0.0001 을 누적한다.
+        10분 데이터는 한 시간에 6행이라 1시간 센서보다 빨리 초기치를 벗어나고,
+        상한이 없어 한 번 걷히면 증분 변환이 그 값을 이어 받는다.
+        이 모드는 그 누적을 두지 않는다. 출력은 항상 base + 그 시각의 미세 노이즈.
+
+        노이즈 (scale=1, 단위 °) — EL_STATION 과 같은 비율, 행 수가 늘어도 폭은 같다.
+        - 60%: ±0.0001
+        - 30%: 0
+        - 10%: 0, ±0.0001, ±0.0002, ±0.0003
+        |Δ| ≤ 0.0003×scale. L=1000mm 기준 0.0003° ≈ 0.005mm 로 1차 ±0.5mm 안에 있다.
+        같은 시각·센서는 재변환해도 같은 값. scale 비우면 1, 0 이면 base 고정.
+        """
+        base, ns, t_h = self._gwan_inputs(df, cfg)
+        n = len(df)
+        if n == 0 or ns == 0.0:
+            return pd.Series(np.full(n, base), index=df.index, dtype=float)
+
+        seed = self._gwan_seed(cfg, base, "EL_ST10")
+        minute_key = np.round(t_h * 60.0).astype(np.int64)
+        u = self._gwan_uniform(seed, 11, minute_key)
+        u2 = self._gwan_uniform(seed, 12, minute_key)
+
+        noise = np.zeros(n, dtype=float)
+        fine = u < 0.60
+        noise[fine] = (u2[fine] * 2.0 - 1.0) * 0.0001
+        spike = u >= 0.90
+        choices = np.array(
+            [0.0, 0.0001, 0.0002, 0.0003, -0.0001, -0.0002, -0.0003],
+            dtype=float,
+        )
+        idx = np.minimum((u2[spike] * choices.size).astype(np.int64), choices.size - 1)
+        noise[spike] = choices[idx]
+        noise *= ns
+        return pd.Series(base + noise, index=df.index, dtype=float)
 
     def generate_EL_TUNNEL(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
         return self.generate_EL_STATION(df, cfg)
