@@ -1346,7 +1346,7 @@ class FileProcessor:
             pass
 
     def _regen_time_only(self, df, file_cfg, company, site, folder, filename):
-        """누락보충으로 붙인 행에서 EL_GWAN·CR_GWAN 슬롯을 그 시각 값으로 다시 계산."""
+        """누락보충으로 붙인 행에서 EL_GWAN·CR_GWAN·EL_ST10 슬롯을 그 시각 값으로 다시 계산."""
         from core.sensor_processor import SENSOR_SLOTS
 
         if df is None or df.empty:
