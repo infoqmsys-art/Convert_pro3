@@ -99,6 +99,19 @@ Convert_pro3/
 | `management.json` | 현장 관리 데이터 | ❌ 제외 |
 | `monitoring_cache.json` | 변환 결과 캐시 (런타임) | ❌ 제외 |
 
+## 문서
+
+구조·워크플로·업데이트·에이전트 규칙은 **[docs/README.md](docs/README.md)** 에서 시작하세요.
+
+## 전체 파이프라인
+
+| 프로젝트 | 경로 | 하는 일 |
+|---|---|---|
+| **Convert_pro3 (이 저장소)** | `C:\projects\Convert_pro3` | 아날로그 → 변환본 CSV (메인3) |
+| File_Converter | `C:\projects\File_Converter` | 485 → 변환본 CSV (메인5) |
+| 수집기 | `C:\projects\QmWebCollector` | 변환본 → 포털 DB |
+| 웹포털 | `C:\projects\QMWebportal` | DB 표시 |
+
 ## 기여 방법
 
 [CONTRIBUTING.md](CONTRIBUTING.md)를 참고해 주세요.

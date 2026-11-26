@@ -12,6 +12,7 @@ SensorProcessor (Convert Pro 3) - Column-based Engine
   SET         base + (원본-base) × scale
   ANSAN_WM    (원본×4) - base + offset
   ANSAN_WM_GA 전값+하드코딩 랜덤증분+평균회귀(시작값 주변 밴드, JSON 불필요)
+  WM          수위 가라. 0.0001 칸, 기본은 내려가지만 한동안 올랐다 다시 내려감
   COPY        다른 컬럼 복사
   NZADD       참조열 base(인덱스); 0→0, 비0→값+랜덤(rand_min~rand_max)
   VIBROMETER  원본 init 9값(스케일 1~9) → 출력 CH 복사
@@ -73,6 +74,7 @@ MODE_META = {
     "SET":        {"use_base": True,  "use_scale": True,  "ref": True,  "desc": "base 기준 변위를 scale 배율로 보정"},
     "ANSAN_WM":   {"use_base": True,  "use_scale": True,  "ref": True,  "desc": "지하수위계: (원값×4) - 파이프길이 + 보정"},
     "ANSAN_WM_GA":{"use_base": True,  "use_scale": True,  "ref": False, "desc": "안산 WM 가라: 전값+랜덤+밴드(코드 고정, scale만 선택)"},
+    "WM":         {"use_base": True,  "use_scale": True,  "ref": False, "desc": "수위 가라: 0.0001 칸. 기본은 내려가지만 서서히 올랐다 다시 내려감. scale 비우면 1칸, 숫자면 그 배"},
     "COPY":       {"use_base": True,  "use_scale": False, "ref": True,  "desc": "다른 컬럼 복사 (base=참조 열 인덱스)"},
     "NZADD":      {"use_base": True,  "use_scale": False, "ref": True,  "desc": "참조열 인덱스 base; 0→0 출력, 비0면 +uniform(rand_min,rand_max)"},
     # ── 원본미참조 ────────────────────────────────────────────────
@@ -128,6 +130,8 @@ CHANG_SM2_SOURCE_ROW = 8
 # ANSAN_WM_GA: 매 행 전값에 더하는 랜덤폭(균등 ±) + 앵커(첫 행)로 당겨 샘플처럼 좁은 밴드 유지.
 WM_GA_STEP_HALF = 0.0035
 WM_GA_MEAN_REVERT = 0.035
+# WM 수위 가라: 한 칸. scale 배율을 곱한다.
+WM_TICK = 0.0001
 
 
 def _fm_increment_between_rows(prev_ts, curr_ts, step_per_hour: float) -> float:
@@ -732,6 +736,95 @@ class SensorProcessor:
             delta = rng.uniform(-step_half, step_half)
             pull = kappa * (anchor - out[i - 1])
             out[i] = out[i - 1] + delta + pull
+
+        return pd.Series(out, index=df.index, dtype=float)
+
+    def generate_WM(self, df: pd.DataFrame, cfg: dict) -> pd.Series:
+        """
+        WM — 수위 가라 (원본 열 무시).
+
+        0.0001 칸으로 걷는다. 같은 값이 이어지는 경우가 많고,
+        움직일 때는 한 칸에서 몇 칸이다.
+        구간은 내려가는 쪽이 길고 기본이지만, 한동안 서서히 올랐다가 다시 내려간다.
+        시작값보다 아래로 0.02, 위로 0.008을 넘기면 방향을 되돌린다.
+
+        base = 시작 수위(carry가 있으면 그다음 값부터 이어감).
+        scale = 칸 배율. 비우거나 1이면 0.0001, 2이면 0.0002.
+        """
+        n = len(df)
+        if n == 0:
+            return pd.Series(dtype=float)
+        rng = np.random.default_rng()
+        col_idx = cfg["col_idx"]
+        hk = header_key_for_col(col_idx)
+        _raw_b = cfg.get("base")
+        if _raw_b is None or (isinstance(_raw_b, str) and str(_raw_b).strip() == ""):
+            base_val = 0.0
+        else:
+            try:
+                base_val = float(_raw_b)
+            except (TypeError, ValueError):
+                base_val = 0.0
+        start = float(resolve_start_scalar(read_carry_float(cfg, hk), base_val))
+
+        mult = 1.0
+        raw_sc = cfg.get("scale")
+        if raw_sc is not None and not (isinstance(raw_sc, str) and str(raw_sc).strip() == ""):
+            try:
+                if isinstance(raw_sc, str):
+                    raw_sc = raw_sc.strip().replace(",", ".")
+                mult = float(raw_sc)
+            except (TypeError, ValueError):
+                mult = 1.0
+            if not np.isfinite(mult) or mult <= 0:
+                mult = 1.0
+        tick = WM_TICK * mult
+        anchor = base_val if base_val != 0.0 else start
+        low = anchor - 0.02 * mult
+        high = anchor + 0.008 * mult
+
+        out = np.empty(n, dtype=float)
+        level = start
+        out[0] = level
+        phase = -1
+        left = int(rng.integers(40, 130))
+        for i in range(1, n):
+            if level < low:
+                phase = 1
+                left = int(rng.integers(20, 70))
+            elif level > high:
+                phase = -1
+                left = int(rng.integers(40, 120))
+            elif left <= 0:
+                if phase < 0 and rng.random() < 0.7:
+                    phase = 1
+                    left = int(rng.integers(18, 75))
+                else:
+                    phase = -1
+                    left = int(rng.integers(40, 140))
+            left -= 1
+
+            if rng.random() < 0.36:
+                step_n = 0
+            else:
+                u = rng.random()
+                if u < 0.58:
+                    mag = 1
+                elif u < 0.82:
+                    mag = 2
+                elif u < 0.93:
+                    mag = 3
+                elif u < 0.98:
+                    mag = 4
+                else:
+                    mag = int(rng.integers(5, 8))
+                if phase < 0:
+                    sign = -1 if rng.random() < 0.74 else 1
+                else:
+                    sign = 1 if rng.random() < 0.66 else -1
+                step_n = sign * mag
+            level = level + step_n * tick
+            out[i] = level
 
         return pd.Series(out, index=df.index, dtype=float)
 

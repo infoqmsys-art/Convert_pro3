@@ -9,7 +9,7 @@ alwaysApply: true
 |---|---|---|---|
 | Convert_pro3 | `C:\projects\Convert_pro3` | **아날로그 센서** 원본 정리·변환 → 변환본 CSV (`C:/DATA/Convertfile/...`) | 메인3 |
 | File_Converter | `C:\projects\File_Converter` | **485 센서** 원본 정리·변환 → 변환본 CSV (`C:\data\Convertcsv`) | 메인5 |
-| 수집기 | `C:\projects\QMWebportal\collector-v1` | 각 서버 PC에서 변환본 CSV를 읽어 포털 DB에 적재 | 메인3·메인5 각각 |
+| 수집기 | `C:\projects\QmWebCollector` | 각 서버 PC에서 변환본 CSV를 읽어 포털 DB에 적재 (별도 git) | 메인3·메인5 각각 |
 | 웹포털 | `C:\projects\QMWebportal` | DB 값을 그대로 보여 줌(표·그래프·보고서) | 웹 서버 |
 
 흐름: 원본 → 변환(아날로그=Convert_pro3 / 485=File_Converter) → 수집기 → 포털 DB → 웹포털
